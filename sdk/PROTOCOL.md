@@ -26,7 +26,7 @@ interface Ready      { ch: "eazo-sdk"; v: 1; t: "ready"; appId?: string; }
 
 interface Hello {
   ch: "eazo-sdk"; v: 1; t: "hello";
-  session:       { authenticated: boolean; user: User | null; token: string | null };
+  session:       { authenticated: boolean; user: User | null; token: string | null; grantedScopes?: AuthScope[] };
   device:        DeviceContext;
   capabilities:  string[];   // e.g. ["auth.*", "device.getContext", "storage.get"]
   apiBase?:      string;     // Eazo platform URL the host is wired to; SDK-internal
@@ -43,6 +43,10 @@ interface BridgeError {
   code: "NOT_SUPPORTED" | "TIMEOUT" | "DENIED" | "INVALID_ARGS" | "INTERNAL";
   message: string;
 }
+
+// WeChat-style profile-consent scope. `profile` ⇒ nickname + avatar.
+// `phone` is reserved (no data yet). Absent/empty granted set ⇒ identity-only.
+type AuthScope = "profile" | "email" | "phone";
 ```
 
 ## Handshake
@@ -93,7 +97,8 @@ The app checks this list before sending a request; unsupported methods fail imme
 | `fn` | `args` | `data` | Notes |
 |---|---|---|---|
 | `auth.getToken` | — | `{ token: string \| null }` | Current session token |
-| `auth.getSession` | — | `{ session: SessionToken \| null }` | Raw encrypted session (`x-eazo-session` payload) |
+| `auth.getSession` | `{ scopes?: AuthScope[] }` (optional) | `{ session: SessionToken \| null }` | Raw encrypted session (`x-eazo-session` payload). `scopes` is the WeChat-style profile-consent request (`"profile"` = nickname + avatar, `"email"`, `"phone"` reserved). Absent/empty ⇒ identity-only session (anonymous `userId` only). The host forwards `scopes` to `POST /api/open/app-session-token`; it must only include granted scopes (never auto-grant without user consent). |
+| `auth.requestProfile` | `{ scopes: AuthScope[] }` | `{ user: User \| null; grantedScopes: AuthScope[] }` | WeChat-style profile consent. Host displays a **native consent sheet** listing the requested scopes; on Allow it re-exchanges a scoped session token (recording the grant), returns the now-populated `user` plus the full set of `grantedScopes`, and pushes `auth.scopesChanged`. Reject with `DENIED` when the user declines. If the host can't show a consent sheet, respond `NOT_SUPPORTED` — the SDK falls back to its own web consent popup inside the WebView. |
 | `auth.requestLogin` | `{ preferredProvider?: string }` (optional) | `{ started: boolean }` | Host should display its native login UI and return promptly (don't block on user). The SDK then waits for `auth.changed` (success) or `auth.loginCancelled` (dismiss). If the host can't show native UI, respond `NOT_SUPPORTED` — SDK falls back to the web login UI inside the WebView. |
 | `auth.requestLogout` | — | — (any data is ignored) | App requests a sign-out. Identity is host-managed: the host decides what (if anything) to do — surface a "not supported" message, run its own logout flow, etc. — and resolves the RPC. The SDK does NOT clear local state on the mobile path; if a real logout occurs, the host pushes `auth.changed` with `authenticated: false`. Respond `NOT_SUPPORTED` only if the host can't display anything in response — the SDK then falls back to web-style local clear. |
 | `device.getContext` | — | `DeviceContext` | Usually unused — hello already contains this |
@@ -107,7 +112,8 @@ The app checks this list before sending a request; unsupported methods fail imme
 
 | `name` | `data` | Trigger |
 |---|---|---|
-| `auth.changed` | `{ authenticated, user, token }` | Login, logout, account switch |
+| `auth.changed` | `{ authenticated, user, token, grantedScopes? }` | Login, logout, account switch. `grantedScopes` (optional) carries the WeChat-style profile-consent scopes the user has granted this app; absent ⇒ treated as `[]` (identity-only). |
+| `auth.scopesChanged` | `{ user?, grantedScopes }` | Profile-consent scopes changed without a full auth-state change — e.g. after the host's native consent sheet (`auth.requestProfile`) grants `profile`/`email`. The SDK merges `grantedScopes` and, if `user` is present, refreshes the cached user. |
 | `auth.loginCancelled` | — (optional `{ reason?: string }`) | User dismissed the native login UI without authenticating. Causes the app's in-flight `auth.login()` to reject with `DENIED`. |
 
 ## Version evolution

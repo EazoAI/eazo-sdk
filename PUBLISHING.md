@@ -44,8 +44,11 @@ The CI will:
 3. ✅ Run tests
 4. ✅ Build TypeScript
 5. ✅ Update package.json version
-6. ✅ Publish to NPM
-7. ✅ Create GitHub Release
+6. ✅ Determine the npm dist-tag from the version string
+7. ✅ Publish to NPM under the resolved dist-tag
+8. ✅ Create GitHub Release
+
+> **Note**: You do **not** need to edit `sdk/package.json` before tagging. The CI overwrites the `version` field from the tag (`npm version ... --allow-same-version`), so the committed `package.json` version can stay as-is.
 
 ### Supported Tag Formats
 
@@ -55,6 +58,33 @@ All these formats work:
 - `V0.0.1` → publishes as `0.0.1`
 - `1.2.3` → publishes as `1.2.3`
 - `v1.2.3` → publishes as `1.2.3`
+
+### Pre-release (alpha / beta / rc)
+
+The CI picks the npm **dist-tag** automatically from the version string, so pre-releases never overwrite `latest`:
+
+| Version contains | dist-tag | Install command |
+|---|---|---|
+| `-alpha` | `alpha` | `npm install @eazo/sdk@alpha` |
+| `-beta` | `beta` | `npm install @eazo/sdk@beta` |
+| `-rc` | `rc` | `npm install @eazo/sdk@rc` |
+| (none) | `latest` | `npm install @eazo/sdk` |
+
+Publish an alpha by pushing a pre-release tag:
+
+```bash
+# Alpha for the next unreleased version
+git tag v0.21.0-alpha.0
+git push origin v0.21.0-alpha.0
+
+# Iterate the next alpha
+git tag v0.21.0-alpha.1
+git push origin v0.21.0-alpha.1
+```
+
+`npm install @eazo/sdk` (i.e. `@latest`) is unaffected — it keeps resolving to the most recent stable release. Only `@eazo/sdk@alpha` (or the exact version) pulls the pre-release.
+
+**Versioning note**: a pre-release like `0.21.0-alpha.1` sorts *before* its stable counterpart `0.21.0`. Target the next unreleased version (e.g. alpha for `0.21.0` while `0.20.0` is the current stable) rather than appending `-alpha` to an already-published version number.
 
 ### Manual Publishing
 
@@ -73,8 +103,12 @@ npm login
 npm run build
 npm test
 
-# Publish
+# Publish a stable release
 npm publish --access public
+
+# Or publish a pre-release (do NOT forget --tag, or it overwrites latest)
+npm version 0.21.0-alpha.0 --no-git-tag-version
+npm publish --access public --tag alpha
 ```
 
 ## Version Guidelines

@@ -5,7 +5,7 @@ import { EazoAuthServer } from "./internal/auth-primitive";
 import type { SessionToken, UserInfo } from "./internal/auth-primitive";
 import { getPlatformApiBase, readAppIdFromEnv } from "./internal/config";
 
-import type { User } from "./types";
+import type { AuthScope, User } from "./types";
 
 
 let authServer: EazoAuthServer | null = null;
@@ -20,6 +20,19 @@ function getAuthServer(): EazoAuthServer {
   }
   authServer = new EazoAuthServer({ privateKey });
   return authServer;
+}
+
+const VALID_SCOPES: readonly AuthScope[] = ["profile", "email", "phone"];
+
+function normalizeScopes(input: unknown): AuthScope[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<AuthScope>();
+  for (const raw of input) {
+    if (typeof raw === "string" && (VALID_SCOPES as readonly string[]).includes(raw)) {
+      seen.add(raw as AuthScope);
+    }
+  }
+  return [...seen];
 }
 
 function normalize(info: UserInfo): User {
@@ -37,7 +50,7 @@ interface HeaderRequest {
 }
 
 export type AuthResult =
-  | { ok: true; user: User }
+  | { ok: true; user: User; grantedScopes: AuthScope[] }
   | { ok: false; response: Response };
 
 function unauthorized(message: string): Response {
@@ -64,7 +77,7 @@ export function requireAuth(request: HeaderRequest): AuthResult {
 
   try {
     const info = getAuthServer().verifySession(parsed);
-    return { ok: true, user: normalize(info) };
+    return { ok: true, user: normalize(info), grantedScopes: normalizeScopes(info.grantedScopes) };
   } catch {
     return { ok: false, response: unauthorized("Invalid session") };
   }
@@ -225,7 +238,7 @@ export const notifications = {
   },
 };
 
-export type { User } from "./types";
+export type { User, AuthScope } from "./types";
 
 // ---------------------------------------------------------------------------
 // Public app info — server-side prefetch helper

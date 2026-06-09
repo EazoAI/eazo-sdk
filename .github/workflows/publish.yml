@@ -41,7 +41,20 @@ jobs:
       - name: Update package version
         run: cd sdk && npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version --allow-same-version
 
+      - name: Determine npm dist-tag
+        id: dist_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          case "$VERSION" in
+            *-alpha*) DIST_TAG=alpha ;;
+            *-beta*)  DIST_TAG=beta ;;
+            *-rc*)    DIST_TAG=rc ;;
+            *)        DIST_TAG=latest ;;
+          esac
+          echo "dist_tag=$DIST_TAG" >> $GITHUB_OUTPUT
+          echo "Publishing $VERSION with dist-tag: $DIST_TAG"
+
       - name: Publish @eazo/sdk
-        run: cd sdk && npm publish --access public
+        run: cd sdk && npm publish --access public --tag ${{ steps.dist_tag.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

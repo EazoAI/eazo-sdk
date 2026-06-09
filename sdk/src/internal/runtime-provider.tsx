@@ -20,6 +20,7 @@ import { _bootstrapDevice } from "./capabilities/device";
 import { setAppId, setHostApiBase } from "./config";
 import { getHost, type Host } from "./env";
 import { LoginUI } from "./login-ui";
+import { ProfileConsentUI } from "./profile-consent-ui";
 import { ShareDownloadModal } from "./share-ui";
 
 export const MountedContext = React.createContext(false);
@@ -115,6 +116,7 @@ export function _EazoRuntimeProvider(props: {
       <div className="eazo-app-area">
         <div className="eazo-app-area-scroller">{props.children}</div>
       </div>
+      <ProfileConsentUI />
       {showBannerUI && (
         <>
           <EazoBrandBanner />

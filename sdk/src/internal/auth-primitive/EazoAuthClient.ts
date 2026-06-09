@@ -21,6 +21,12 @@ export class EazoAuthClient {
   private readonly apiBase: string;
 
   private _authingClient: AuthenticationClient | null = null;
+  /**
+   * The GenAuth JWT from the most recent successful login. Cached so a later
+   * `auth.requestProfile([...])` can re-exchange a scoped session token
+   * without forcing the user to re-authenticate.
+   */
+  private _lastJwt: string | null = null;
 
   constructor(config: EazoAuthClientConfig) {
     if (!config.appId) throw new Error("@eazo/sdk: appId is required");
@@ -30,19 +36,70 @@ export class EazoAuthClient {
     this.apiBase       = getPlatformApiBase(config.apiBase);
   }
 
+  /** True when a cached JWT is available for a scoped re-exchange. */
+  hasCachedJwt(): boolean {
+    return !!this._lastJwt;
+  }
+
+  /** Returns the cached login JWT, if any (for persistence across reloads). */
+  getCachedJwt(): string | null {
+    return this._lastJwt;
+  }
+
+  /**
+   * Rehydrate the cached login JWT after a page reload. The web bootstrap
+   * persists the JWT alongside the session and restores it here so a later
+   * `auth.requestProfile([...])` can re-exchange a scoped token without
+   * forcing the user to re-authenticate.
+   */
+  setCachedJwt(jwt: string | null): void {
+    this._lastJwt = jwt;
+  }
+
+  /**
+   * Re-exchange a scoped session token using the cached login JWT. Called by
+   * `auth.requestProfile` after the user approves the consent popup —
+   * `consent: true` records the grant server-side and the returned token
+   * carries the newly-granted profile fields.
+   */
+  reexchangeWithScopes(
+    scopes: string[],
+    consent: boolean = true,
+  ): Promise<SessionToken> {
+    if (!this._lastJwt) {
+      throw new Error(
+        "@eazo/sdk: no cached credential to request profile scopes; the user must log in first.",
+      );
+    }
+    return this._getSessionToken(this._lastJwt, { scopes, consent });
+  }
+
   /**
    * Exchanges a GenAuth JWT for an encrypted session token.
    * The resulting token has the same shape as Eazo Mobile's session,
    * so the server always decrypts it with EAZO_PRIVATE_KEY.
+   *
+   * By default no profile scopes are requested, so the issued token is
+   * identity-only. Pass `scopes` (+ `consent: true` after the user approves)
+   * to include WeChat-style consented profile fields.
    */
-  private async _getSessionToken(jwt: string): Promise<SessionToken> {
+  private async _getSessionToken(
+    jwt: string,
+    opts: { scopes?: string[]; consent?: boolean } = {},
+  ): Promise<SessionToken> {
+    this._lastJwt = jwt;
+    const body: Record<string, unknown> = { appId: this.appId };
+    if (opts.scopes && opts.scopes.length > 0) {
+      body.scopes = opts.scopes;
+      if (opts.consent) body.consent = true;
+    }
     const res = await fetch(`${this.apiBase}/api/open/app-session-token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${jwt}`,
       },
-      body: JSON.stringify({ appId: this.appId }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {

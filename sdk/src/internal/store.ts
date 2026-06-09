@@ -1,6 +1,6 @@
 import type { SocialConnection } from "./auth-primitive";
 
-import type { AuthState, DeviceContext, EazoState } from "../types";
+import type { AuthScope, AuthState, DeviceContext, EazoState } from "../types";
 
 type Listener = () => void;
 
@@ -23,6 +23,7 @@ const INITIAL_AUTH: AuthState = {
   user: null,
   loading: true,
   authenticated: false,
+  grantedScopes: [],
 };
 
 const INITIAL_DEVICE: DeviceContext = {
@@ -49,9 +50,29 @@ const INITIAL_SHARE_UI: ShareUIState = {
   open: false,
 };
 
+/**
+ * State for the WeChat-style profile-consent popup (web path). Opened by
+ * `auth.requestProfile(scopes)`; resolved/rejected by the popup's
+ * Allow / Deny buttons.
+ */
+export interface ProfileConsentUIState {
+  open: boolean;
+  scopes: AuthScope[];
+  submitting: boolean;
+  error: string | null;
+}
+
+const INITIAL_PROFILE_CONSENT_UI: ProfileConsentUIState = {
+  open: false,
+  scopes: [],
+  submitting: false,
+  error: null,
+};
+
 export interface InternalEazoState extends EazoState {
   loginUI: LoginUIState;
   shareUI: ShareUIState;
+  profileConsentUI: ProfileConsentUIState;
 }
 
 export const INITIAL_STATE: InternalEazoState = {
@@ -59,6 +80,7 @@ export const INITIAL_STATE: InternalEazoState = {
   device: INITIAL_DEVICE,
   loginUI: INITIAL_LOGIN_UI,
   shareUI: INITIAL_SHARE_UI,
+  profileConsentUI: INITIAL_PROFILE_CONSENT_UI,
 };
 
 let snapshot: InternalEazoState = INITIAL_STATE;
@@ -92,7 +114,8 @@ export function setAuth(patch: Partial<AuthState>): void {
   if (
     nextAuth.user === current.user &&
     nextAuth.loading === current.loading &&
-    nextAuth.authenticated === current.authenticated
+    nextAuth.authenticated === current.authenticated &&
+    nextAuth.grantedScopes === current.grantedScopes
   ) {
     return;
   }
@@ -127,4 +150,14 @@ export function setShareUI(patch: Partial<ShareUIState>): void {
   );
   if (!changed) return;
   publish({ ...snapshot, shareUI: next });
+}
+
+export function setProfileConsentUI(patch: Partial<ProfileConsentUIState>): void {
+  const current = snapshot.profileConsentUI;
+  const next: ProfileConsentUIState = { ...current, ...patch };
+  const changed = (Object.keys(next) as Array<keyof ProfileConsentUIState>).some(
+    (key) => next[key] !== current[key],
+  );
+  if (!changed) return;
+  publish({ ...snapshot, profileConsentUI: next });
 }

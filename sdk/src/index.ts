@@ -27,4 +27,4 @@ export type {
   PublicAppInfo,
   PublicAppViewer,
 } from "./internal/banner-ui/app-info";
-export type { User, DeviceContext, AuthState, EazoState } from "./types";
+export type { User, DeviceContext, AuthState, AuthScope, EazoState } from "./types";
