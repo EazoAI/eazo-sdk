@@ -16,7 +16,7 @@ export function PaymentUnlockPanel(props: PaymentUnlockPanelProps) {
       description="Unlock the paid experience for this app."
       ctaLabel="Unlock premium"
       activeLabel="Premium active"
-      pendingLabel="Payment pending"
+      pendingLabel="Continue payment"
       {...props}
     />
   );

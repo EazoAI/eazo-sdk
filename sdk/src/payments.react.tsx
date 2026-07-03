@@ -250,7 +250,7 @@ export function EazoPaymentUnlockPanel({
   description = "Unlock the paid experience for this app.",
   ctaLabel = "Unlock premium",
   activeLabel = "Premium active",
-  pendingLabel = "Payment pending",
+  pendingLabel = "Continue payment",
   className,
   children,
 }: EazoPaymentUnlockPanelProps) {
@@ -259,7 +259,7 @@ export function EazoPaymentUnlockPanel({
       {(payment) => {
         if (children) return children(payment);
 
-        const disabled = payment.active || payment.checking || payment.starting || payment.pending;
+        const disabled = payment.active || payment.checking || payment.starting;
         const label = payment.active
           ? activeLabel
           : payment.starting
@@ -342,7 +342,7 @@ export function EazoEntitlementGate({
   paid,
   free,
   loading = null,
-  inactiveStatuses = ["inactive", "failed", "expired", "refunded", "disputed"],
+  inactiveStatuses = ["inactive", "pending", "failed", "expired", "refunded", "disputed"],
 }: EazoEntitlementGateProps) {
   const entitlement = useEazoEntitlement(productKey);
   if (entitlement.checking) return <>{loading}</>;

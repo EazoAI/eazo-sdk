@@ -32,6 +32,7 @@ import {
   EazoEntitlementGate,
   EazoPaymentLifecycle,
   EazoPaymentButton,
+  EazoPaymentUnlockPanel,
   refreshEazoEntitlement,
 } from "../payments.react";
 import {
@@ -47,9 +48,15 @@ import {
   mockEazoPaymentStatus,
 } from "../payments.testing";
 import { auth } from "../internal/capabilities/auth";
+import { CHANNEL, VERSION } from "../internal/bridge/protocol";
 import { store } from "../internal/store";
+import { __dispatchHostMessage, __resetSDK } from "../testing";
 
 const originalEnv = { ...process.env };
+
+interface RNGlobal {
+  ReactNativeWebView?: { postMessage: (payload: string) => void };
+}
 
 function mockPlatformResponse(status: number, body: unknown) {
   global.fetch = vi.fn().mockResolvedValue(
@@ -66,8 +73,55 @@ function seedWebSession() {
   return JSON.stringify(session);
 }
 
+function installMobileHost(session: unknown) {
+  (globalThis.window as unknown as RNGlobal).ReactNativeWebView = {
+    postMessage: (payload: string) => {
+      const message = JSON.parse(payload) as {
+        t: string;
+        id?: string;
+        fn?: string;
+      };
+      if (message.t === "ready") {
+        __dispatchHostMessage({
+          ch: CHANNEL,
+          v: VERSION,
+          t: "hello",
+          session: {
+            authenticated: true,
+            user: {
+              id: "app_user_mobile",
+              email: "mobile@example.com",
+              name: "Mobile user",
+              avatarUrl: null,
+            },
+            token: "mobile_token",
+          },
+          device: { platform: "mobile", locale: "en-US" },
+          capabilities: ["auth.getSession"],
+        });
+      }
+      if (message.t === "req" && message.fn === "auth.getSession") {
+        __dispatchHostMessage({
+          ch: CHANNEL,
+          v: VERSION,
+          t: "res",
+          id: message.id,
+          ok: true,
+          data: { session },
+        });
+      }
+    },
+  };
+}
+
+function removeMobileHost() {
+  delete (globalThis.window as unknown as RNGlobal).ReactNativeWebView;
+}
+
 describe("Eazo Payments SDK", () => {
   beforeEach(() => {
+    __resetSDK();
+    removeMobileHost();
     process.env.EAZO_API_BASE = "https://creator.dev1.eazo.ai";
     process.env.EAZO_APP_ID = "app_test";
     process.env.EAZO_PRIVATE_KEY = "eazo_private_test";
@@ -79,6 +133,8 @@ describe("Eazo Payments SDK", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
+    __resetSDK();
+    removeMobileHost();
     store.reset();
     window.sessionStorage.clear();
     window.localStorage.clear();
@@ -434,6 +490,34 @@ describe("Eazo Payments SDK", () => {
     expect(readEazoPaymentIdFromUrl("?payment_id=cap_snake&paymentId=cap_camel")).toBe("cap_snake");
   });
 
+  it("waits for mobile host session before polling payment success status", async () => {
+    const mobileSession = { encryptedData: "ciphertext", encryptedKey: "key", iv: "iv", authTag: "tag" };
+    installMobileHost(mobileSession);
+    window.history.pushState({}, "", "/payment/success?payment_id=cap_mobile");
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoPaymentStatus("succeeded")), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoEntitlement("active")), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ) as unknown as typeof fetch;
+
+    render(<EazoPaymentSuccessPage />);
+
+    expect(await screen.findByText("Premium unlocked")).toBeTruthy();
+    expect(fetch).toHaveBeenCalledWith("/api/payments/status?paymentId=cap_mobile", {
+      headers: { "x-eazo-session": JSON.stringify(mobileSession) },
+      cache: "no-store",
+    });
+  });
+
   it("refreshes entitlement from the app-local route and caches active state", async () => {
     seedWebSession();
     mockPlatformResponse(200, mockEazoEntitlement("active"));
@@ -495,6 +579,43 @@ describe("Eazo Payments SDK", () => {
 
     await waitFor(() => expect(auth.login).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_test"));
+  });
+
+  it("keeps abandoned pending entitlements retryable", async () => {
+    seedWebSession();
+    vi.spyOn(auth, "login").mockResolvedValue({
+      id: "app_user_test",
+      email: "test@example.com",
+      name: "Test",
+      avatarUrl: null,
+    });
+    vi.spyOn(auth, "getSessionHeader").mockResolvedValue("session_test");
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoEntitlement("pending")), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          checkoutUrl: "https://checkout.stripe.com/c/pay/cs_retry",
+          paymentId: "cap_retry",
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ) as unknown as typeof fetch;
+    const assign = vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
+
+    render(<EazoPaymentUnlockPanel productKey="premium" />);
+
+    const button = await screen.findByRole("button", { name: "Continue payment" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    button.click();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_retry"));
   });
 
   it("exposes a full checkout lifecycle render prop for app UI", async () => {

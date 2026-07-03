@@ -94,6 +94,12 @@ function storeCurrentWebSession(): SessionToken | null {
   return webSessionCache;
 }
 
+function hasHostTransport(): boolean {
+  if (typeof window === "undefined") return false;
+  const rn = (window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView;
+  return !!rn || window.parent !== window;
+}
+
 async function bootstrapWeb(): Promise<void> {
   const session = storeCurrentWebSession();
   if (!session) {
@@ -293,6 +299,9 @@ export const auth = {
 
   /** Web-only helper for request.ts: returns the raw session JSON for x-eazo-session. */
   async getSessionHeader(): Promise<string | null> {
+    if (hasHostTransport()) {
+      await ensureBootstrap();
+    }
     const bridge = getBridge();
     if (bridge?.getStatus().ready) {
       try {
