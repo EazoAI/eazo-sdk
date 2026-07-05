@@ -1,33 +1,41 @@
-# Eazo Payments One-Time Unlock Example
+# Eazo Payments Monthly Subscription Example
 
-Complete Next.js App Router example for Eazo marketplace payments.
+Complete Next.js App Router example for Eazo marketplace monthly subscriptions.
 
-Use this example as the reference implementation for generated apps. The CLI
-scaffold creates the same integration shape; this directory explains what each
-piece does and why the generated app should avoid custom payment code.
+Use this example as the reference implementation when an app needs recurring
+monthly access. The app configures only `mode: EAZO_PAYMENT_MODE.SUBSCRIPTION`;
+there is no public `interval` field. Eazo platform and SDK internals always use
+monthly recurring Stripe Checkout for this recipe.
 
 ## What This Example Implements
 
-- A one-time payment product named `premium`.
+- A monthly subscription product named `premium`.
 - A paid CTA that requires Eazo Auth before checkout.
 - Same-window redirect to Stripe Checkout through SDK lifecycle code.
 - Stripe return pages at `/payment/success` and `/payment/cancel`.
 - Payment status polling after Stripe redirects back with `payment_id`.
 - Entitlement refresh and paid/free UI gating from Eazo platform state.
-- Mock tests for checkout, status, entitlement, UI wiring, and legacy-flow regressions.
+- Subscription list/cancel/resume local routes backed by SDK helpers.
+- A subscription management panel that can cancel at period end or resume.
+- Mock tests for checkout, status, entitlement, subscription routes, UI wiring,
+  and legacy-flow regressions.
 
 The generated app never talks to Stripe directly. It never stores Stripe
-secrets, never creates Stripe webhooks, and never hand-writes
-`/api/open/payments/*` request bodies.
+secrets, never creates Stripe webhooks, never hand-writes subscription DTOs, and
+never sends an `interval` field.
 
 ## File Map
 
 ```text
 src/lib/eazo-payments/catalog.ts
 src/components/eazo-payments/PaymentUnlockPanel.tsx
+src/components/eazo-payments/SubscriptionManagementPanel.tsx
 src/app/api/payments/checkout/route.ts
 src/app/api/payments/status/route.ts
 src/app/api/payments/entitlements/route.ts
+src/app/api/payments/subscriptions/route.ts
+src/app/api/payments/subscriptions/[subscriptionId]/cancel/route.ts
+src/app/api/payments/subscriptions/[subscriptionId]/resume/route.ts
 src/app/payment/success/page.tsx
 src/app/payment/cancel/page.tsx
 src/app/page.tsx
@@ -45,10 +53,10 @@ This is the only product configuration file.
 export const PAYMENT_PRODUCTS = defineEazoPaymentProducts({
   premium: {
     key: "premium",
-    name: "Premium unlock",
+    name: "Premium monthly subscription",
     unitAmount: 499,
     currency: EAZO_PAYMENT_CURRENCY.USD,
-    mode: EAZO_PAYMENT_MODE.ONE_TIME
+    mode: EAZO_PAYMENT_MODE.SUBSCRIPTION
   }
 } as const);
 ```
@@ -59,14 +67,14 @@ Rules:
 - `entitlementKey` defaults to `key`; only set it manually when multiple products unlock the same entitlement.
 - `unitAmount` is cents.
 - `mode` and `currency` use SDK constants, not raw strings.
+- Do not add `interval`; this recipe is always monthly.
 - `defineEazoPaymentProducts(...)` validates keys, modes, currency, and price shape.
 
 ### `PaymentUnlockPanel.tsx`
 
-This is the reusable UI shell. Generated apps may edit markup, classes, and
-text, but the payment lifecycle must stay inside SDK components. The scaffolded
-panel wraps `EazoPaymentUnlockPanel`; custom layouts can use its render prop or
-`EazoPaymentLifecycle`.
+This reusable UI shell wraps `EazoPaymentUnlockPanel`. Generated apps may edit
+markup, classes, and text, but the payment lifecycle must stay inside SDK
+components. Custom layouts can use its render prop or `EazoPaymentLifecycle`.
 
 The SDK lifecycle owns:
 
@@ -74,13 +82,26 @@ The SDK lifecycle owns:
 - entitlement checking
 - checkout creation
 - checkout redirect
-- pending, active, failed, refunded, and disputed states
+- pending, active, canceling, past-due, failed, refunded, and disputed states
 - visible error state
 
-The default button calls only the SDK-owned checkout action:
-
 Do not replace it with `fetch("/api/payments/checkout")`, `data.url`,
-`window.open`, or Stripe SDK calls.
+`window.open`, Stripe SDK calls, Stripe Billing calls, or generated-app webhook
+code.
+
+### `SubscriptionManagementPanel.tsx`
+
+This panel wraps `EazoSubscriptionManagementPanel`.
+
+It owns:
+
+- loading the current app user's Eazo subscriptions
+- canceling renewal at period end
+- resuming renewal before period end
+- keeping the app UI on SDK-managed subscription state
+
+Past-due and canceled subscriptions are display-only here. The user should
+return to the app premium CTA to start a new checkout.
 
 ### Local API Routes
 
@@ -90,21 +111,17 @@ The local routes are intentionally thin:
 export const POST = createEazoCheckoutRoute({ getProduct: getPaymentProduct });
 export const GET = createEazoPaymentStatusRoute();
 export const GET = createEazoEntitlementRoute();
+export const GET = createEazoSubscriptionsRoute();
+export const POST = createEazoCancelSubscriptionRoute();
+export const POST = createEazoResumeSubscriptionRoute();
 ```
 
 These helpers read `EAZO_API_BASE`, `EAZO_APP_ID`, and `EAZO_PRIVATE_KEY` on
 the server. They also translate local app requests into the platform payment
-contract:
+contract without exposing platform DTOs to UI code.
 
-- `POST /api/payments/checkout`
-- `GET /api/payments/status?paymentId=...`
-- `GET /api/payments/entitlements?productKey=...`
-
-The route helpers also accept compatibility aliases such as `payment_id`,
-`product_key`, and `key`, but generated app UI should still call them only
-through SDK lifecycle components.
-
-Generated app UI should call these only through SDK lifecycle components.
+Generated app UI should call payment behavior only through SDK lifecycle
+components and hooks.
 
 ### Success And Cancel Pages
 
@@ -121,23 +138,6 @@ It:
 
 `/payment/cancel` uses `EazoPaymentCancelPage` and does not unlock anything.
 
-### `src/app/page.tsx`
-
-The app page demonstrates the two normal UI placements:
-
-```tsx
-<PaymentUnlockPanel productKey="premium" />
-
-<PremiumEntitlementGate
-  paid={<PremiumExperience />}
-  free={<UpgradeExperience />}
-/>
-```
-
-Use `PaymentUnlockPanel` for CTAs and profile/settings upgrade panels. Use
-`PremiumEntitlementGate` to switch paid vs free content from platform
-entitlement state.
-
 ### Mock Tests
 
 `payment-contract.test.ts` verifies the full server/payment contract without
@@ -145,11 +145,11 @@ Stripe or a live Eazo platform:
 
 - checkout request URL, method, headers, and body fields
 - required `unit_amount`, `product_name`, `product_key`, and `entitlement_key`
-- forbidden `amount`, `title`, `product_id`, `checkout_url`, and `order_id`
+- forbidden `amount`, `title`, `product_id`, `checkout_url`, `order_id`, and `interval`
 - checkout response `checkout_session_id`, `checkout_url`, and `payment_id`
 - normalized SDK result `checkoutSessionId`, `checkoutUrl`, and `paymentId`
-- status states: `pending`, `succeeded`, `failed`, `expired`, `refunded`, `disputed`
-- entitlement states: `inactive`, `pending`, `active`, `failed`, `expired`, `refunded`, `disputed`
+- status states and entitlement states
+- subscription list/cancel/resume route contracts
 - route-level request validation
 
 `payment-ui-contract.test.tsx` verifies UI wiring:
@@ -185,18 +185,19 @@ npm run typecheck
 ## What Agents May Customize
 
 - product names and prices in `catalog.ts`
-- visual markup, class names, and copy in `PaymentUnlockPanel.tsx`
-- placement of `PaymentUnlockPanel` and `PremiumEntitlementGate`
+- visual markup, class names, and copy in payment wrapper components
+- placement of `PaymentUnlockPanel`, `PremiumEntitlementGate`, and `SubscriptionManagementPanel`
 - surrounding page layout and styling
 
 ## What Agents Must Not Customize
 
+- subscription interval
 - platform payment request bodies
-- Stripe SDK or Stripe webhook code
+- Stripe SDK, Stripe Billing, or Stripe webhook code
 - `STRIPE_SECRET_KEY` or Stripe publishable keys
 - checkout popups or external-browser bridges
 - entitlement state stored only in localStorage
-- DTO field names such as `amount`, `title`, `product_id`, or `checkout_url`
+- DTO field names such as `amount`, `title`, `product_id`, `checkout_url`, or `interval`
 
 The checkout button redirects with same-window navigation. Keep that behavior so
 browser, E2B preview, hosted apps, and eazo-mobile WebView share one payment

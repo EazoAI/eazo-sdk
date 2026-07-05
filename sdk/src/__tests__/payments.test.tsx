@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -18,22 +18,31 @@ import {
 } from "../payments";
 import {
   buildEazoCheckoutRequest,
+  cancelEazoSubscription,
   createEazoCheckoutSession,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
+  listEazoSubscriptions,
+  resumeEazoSubscription,
 } from "../payments.server";
 import {
+  createEazoCancelSubscriptionRoute,
   createEazoCheckoutRoute,
   createEazoEntitlementRoute,
   createEazoPaymentStatusRoute,
-  EazoPaymentSuccessPage,
+  createEazoResumeSubscriptionRoute,
+  createEazoSubscriptionsRoute,
 } from "../payments.next";
+import { EazoPaymentSuccessPage } from "../payments.next.client";
 import {
   EazoEntitlementGate,
   EazoPaymentLifecycle,
   EazoPaymentButton,
+  EazoSubscriptionManagementPanel,
   EazoPaymentUnlockPanel,
+  readCachedEazoEntitlement,
   refreshEazoEntitlement,
+  rememberEazoEntitlement,
 } from "../payments.react";
 import {
   assertCreateEazoCheckoutResultContract,
@@ -41,11 +50,15 @@ import {
   assertEazoCheckoutResponseContract,
   assertEazoEntitlementContract,
   assertEazoPaymentStatusContract,
+  assertEazoSubscriptionContract,
+  assertEazoSubscriptionsResponseContract,
   assertLocalCheckoutBodyContract,
   assertNoLegacyPaymentFlowSource,
   mockEazoCheckoutResponse,
   mockEazoEntitlement,
   mockEazoPaymentStatus,
+  mockEazoSubscription,
+  mockEazoSubscriptionsResponse,
 } from "../payments.testing";
 import { auth } from "../internal/capabilities/auth";
 import { CHANNEL, VERSION } from "../internal/bridge/protocol";
@@ -122,7 +135,7 @@ describe("Eazo Payments SDK", () => {
   beforeEach(() => {
     __resetSDK();
     removeMobileHost();
-    process.env.EAZO_API_BASE = "https://creator.dev1.eazo.ai";
+    process.env.EAZO_API_BASE = "https://dev1.eazo.ai";
     process.env.EAZO_APP_ID = "app_test";
     process.env.EAZO_PRIVATE_KEY = "eazo_private_test";
     window.sessionStorage.clear();
@@ -170,6 +183,27 @@ describe("Eazo Payments SDK", () => {
       },
     });
     assertEazoCheckoutRequestContract(request);
+  });
+
+  it("builds subscription checkout DTO without exposing interval", () => {
+    const request = buildEazoCheckoutRequest({
+      productKey: "premium",
+      productName: "Premium monthly subscription",
+      unitAmount: 499,
+      currency: "usd",
+      mode: EAZO_PAYMENT_MODE.SUBSCRIPTION,
+      entitlementKey: "premium",
+      appUserId: "app_user_test",
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+      idempotencyKey: "checkout-subscription",
+    });
+
+    assertEazoCheckoutRequestContract(request);
+    expect(request.mode).toBe("subscription");
+    expect(request.metadata.mode).toBe("subscription");
+    expect(request).not.toHaveProperty("interval");
+    expect(JSON.stringify(request)).not.toContain("interval");
   });
 
   it("defines products with SDK constants and derives entitlement keys", () => {
@@ -263,7 +297,7 @@ describe("Eazo Payments SDK", () => {
       paymentId: "cap_test_eazo",
     });
     expect(fetch).toHaveBeenCalledWith(
-      "https://creator.dev1.eazo.ai/api/open/payments/checkout-sessions",
+      "https://dev1.eazo.ai/api/open/payments/checkout-sessions",
       expect.objectContaining({
         method: "POST",
         headers: {
@@ -323,7 +357,7 @@ describe("Eazo Payments SDK", () => {
       expect(result.status).toBe(status);
       expect(result.paid).toBe(status === "succeeded");
       expect(fetch).toHaveBeenCalledWith(
-        "https://creator.dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test",
+        "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test",
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -332,7 +366,7 @@ describe("Eazo Payments SDK", () => {
     },
   );
 
-  it.each(["inactive", "pending", "active", "failed", "expired", "refunded", "disputed"] as const)(
+  it.each(["inactive", "pending", "active", "canceling", "past_due", "canceled", "failed", "expired", "refunded", "disputed"] as const)(
     "reads %s entitlement status",
     async (status) => {
       const platformResponse = mockEazoEntitlement(status);
@@ -343,7 +377,7 @@ describe("Eazo Payments SDK", () => {
       expect(result.status).toBe(status);
       expect(result.active).toBe(status === "active");
       expect(fetch).toHaveBeenCalledWith(
-        "https://creator.dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
+        "https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -351,6 +385,45 @@ describe("Eazo Payments SDK", () => {
       );
     },
   );
+
+  it("lists, cancels, and resumes subscriptions through the platform API", async () => {
+    const subscriptionsResponse = mockEazoSubscriptionsResponse();
+    assertEazoSubscriptionsResponseContract(subscriptionsResponse);
+    mockPlatformResponse(200, subscriptionsResponse);
+
+    const subscriptions = await listEazoSubscriptions({ appUserId: "app_user_test" });
+    assertEazoSubscriptionsResponseContract(subscriptions);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
+      {
+        headers: { Authorization: "Bearer eazo_private_test" },
+        cache: "no-store",
+      },
+    );
+
+    const subscription = mockEazoSubscription({ cancel_at_period_end: true });
+    mockPlatformResponse(200, { subscription });
+    const canceled = await cancelEazoSubscription("cas_test_eazo", { appUserId: "app_user_test" });
+    assertEazoSubscriptionContract(canceled.subscription);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
+      }),
+    );
+
+    mockPlatformResponse(200, { subscription: mockEazoSubscription({ cancel_at_period_end: false }) });
+    const resumed = await resumeEazoSubscription("cas_test_eazo", { appUserId: "app_user_test" });
+    assertEazoSubscriptionContract(resumed.subscription);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/resume",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
+      }),
+    );
+  });
 
   it("starts checkout through the local route and remembers payment id", async () => {
     vi.spyOn(auth, "login").mockResolvedValue({
@@ -518,6 +591,43 @@ describe("Eazo Payments SDK", () => {
     });
   });
 
+  it("shows an attention state when payment remains processing after the polling limit", async () => {
+    vi.useFakeTimers();
+    try {
+      seedWebSession();
+      window.history.pushState({}, "", "/payment/success?payment_id=cap_processing");
+      global.fetch = vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(mockEazoPaymentStatus("processing")), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ) as unknown as typeof fetch;
+
+      render(<EazoPaymentSuccessPage maxAttempts={2} pollIntervalMs={10} />);
+
+      expect(screen.getByText("Confirming payment")).toBeTruthy();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(10);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("Payment needs attention")).toBeTruthy();
+      expect(screen.getByText(/still processing/i)).toBeTruthy();
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refreshes entitlement from the app-local route and caches active state", async () => {
     seedWebSession();
     mockPlatformResponse(200, mockEazoEntitlement("active"));
@@ -527,6 +637,19 @@ describe("Eazo Payments SDK", () => {
       active: true,
     });
     expect(window.localStorage.getItem("eazo:paymentEntitlement:premium")).toContain("active");
+  });
+
+  it("does not treat stale active cache flags as unlocked for inactive statuses", () => {
+    rememberEazoEntitlement({
+      ...mockEazoEntitlement("refunded"),
+      product_key: "premium",
+      active: true,
+    });
+
+    expect(readCachedEazoEntitlement("premium")).toMatchObject({
+      status: "refunded",
+      active: false,
+    });
   });
 
   it("renders the paid branch through the entitlement gate", async () => {
@@ -543,6 +666,49 @@ describe("Eazo Payments SDK", () => {
     );
 
     expect(await screen.findByText("Pro is active")).toBeTruthy();
+  });
+
+  it("renders subscription management and resumes canceling subscriptions", async () => {
+    seedWebSession();
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoSubscriptionsResponse({
+          items: [mockEazoSubscription({ cancel_at_period_end: true })],
+        })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          subscription: mockEazoSubscription({ cancel_at_period_end: false }),
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoSubscriptionsResponse({
+          items: [mockEazoSubscription({ cancel_at_period_end: false })],
+        })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ) as unknown as typeof fetch;
+
+    render(<EazoSubscriptionManagementPanel />);
+
+    expect(await screen.findByText("Test app")).toBeTruthy();
+    screen.getByRole("button", { name: "Resume" }).click();
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/payments/subscriptions/cas_test_eazo/resume",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "x-eazo-session": expect.any(String) },
+      }),
+    ));
   });
 
   it("payment button starts checkout only after entitlement check and login", async () => {
@@ -759,7 +925,7 @@ describe("Eazo Payments SDK", () => {
     assertEazoPaymentStatusContract(body);
     expect(body).toEqual(mockEazoPaymentStatus("succeeded"));
     expect(fetch).toHaveBeenCalledWith(
-      "https://creator.dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
+      "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
       expect.objectContaining({
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -780,7 +946,7 @@ describe("Eazo Payments SDK", () => {
 
     expect(response.status).toBe(200);
     expect(fetch).toHaveBeenCalledWith(
-      "https://creator.dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
+      "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
       expect.objectContaining({
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -807,7 +973,7 @@ describe("Eazo Payments SDK", () => {
     assertEazoEntitlementContract(body);
     expect(body).toEqual(mockEazoEntitlement("active"));
     expect(fetch).toHaveBeenCalledWith(
-      "https://creator.dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
+      "https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
       expect.objectContaining({
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -832,7 +998,7 @@ describe("Eazo Payments SDK", () => {
 
       expect(response.status).toBe(200);
       expect(fetch).toHaveBeenCalledWith(
-        "https://creator.dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
+        "https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=premium&app_user_id=app_user_test",
         expect.objectContaining({
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -840,6 +1006,56 @@ describe("Eazo Payments SDK", () => {
       );
     },
   );
+
+  it("creates subscription management route handlers", async () => {
+    const getUser = () => ({
+      ok: true as const,
+      user: { id: "app_user_test", email: "test@example.com", name: "Test", avatarUrl: null },
+    });
+    mockPlatformResponse(200, mockEazoSubscriptionsResponse());
+
+    const GET = createEazoSubscriptionsRoute({ getUser });
+    const listResponse = await GET(new Request("https://app.example.com/api/payments/subscriptions"));
+    expect(listResponse.status).toBe(200);
+    assertEazoSubscriptionsResponseContract(await listResponse.json());
+    expect(fetch).toHaveBeenCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer eazo_private_test" },
+        cache: "no-store",
+      }),
+    );
+
+    mockPlatformResponse(200, { subscription: mockEazoSubscription({ cancel_at_period_end: true }) });
+    const cancelPOST = createEazoCancelSubscriptionRoute({ getUser });
+    const cancelResponse = await cancelPOST(
+      new Request("https://app.example.com/api/payments/subscriptions/cas_test_eazo/cancel"),
+      { params: Promise.resolve({ subscriptionId: "cas_test_eazo" }) },
+    );
+    expect(cancelResponse.status).toBe(200);
+    expect(fetch).toHaveBeenLastCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
+      }),
+    );
+
+    mockPlatformResponse(200, { subscription: mockEazoSubscription({ cancel_at_period_end: false }) });
+    const resumePOST = createEazoResumeSubscriptionRoute({ getUser });
+    const resumeResponse = await resumePOST(
+      new Request("https://app.example.com/api/payments/subscriptions/cas_test_eazo/resume"),
+      { params: Promise.resolve({ subscriptionId: "cas_test_eazo" }) },
+    );
+    expect(resumeResponse.status).toBe(200);
+    expect(fetch).toHaveBeenLastCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/resume",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
+      }),
+    );
+  });
 
   it("returns clear local payment route validation errors", async () => {
     const statusGET = createEazoPaymentStatusRoute();
@@ -878,6 +1094,16 @@ describe("Eazo Payments SDK", () => {
     expect(route).toContain("@eazo/sdk/payments/next");
     expect(route).not.toContain("/api/open/payments/checkout-sessions");
     expect(route).not.toContain("unit_amount");
+    const successPage = fs.readFileSync(
+      path.join(cwd, "src/app/payment/success/page.tsx"),
+      "utf8",
+    );
+    const cancelPage = fs.readFileSync(
+      path.join(cwd, "src/app/payment/cancel/page.tsx"),
+      "utf8",
+    );
+    expect(successPage).toContain("@eazo/sdk/payments/next/client");
+    expect(cancelPage).toContain("@eazo/sdk/payments/next/client");
     const panel = fs.readFileSync(
       path.join(cwd, "src/components/eazo-payments/PaymentUnlockPanel.tsx"),
       "utf8",
@@ -889,6 +1115,34 @@ describe("Eazo Payments SDK", () => {
       "utf8",
     );
     assertNoLegacyPaymentFlowSource(uiTest, "payment-ui-contract.test.tsx");
+  });
+
+  it("scaffolds monthly subscription files without exposing interval", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eazo-payments-subscription-"));
+    const result = scaffoldPayments({ cwd, recipe: "monthly-subscription" });
+
+    expect(result.files).toContain("src/components/eazo-payments/SubscriptionManagementPanel.tsx");
+    expect(result.files).toContain("src/app/api/payments/subscriptions/route.ts");
+    expect(result.files).toContain("src/app/api/payments/subscriptions/[subscriptionId]/cancel/route.ts");
+    expect(result.files).toContain("src/app/api/payments/subscriptions/[subscriptionId]/resume/route.ts");
+
+    const catalog = fs.readFileSync(path.join(cwd, "src/lib/eazo-payments/catalog.ts"), "utf8");
+    expect(catalog).toContain("EAZO_PAYMENT_MODE.SUBSCRIPTION");
+    expect(catalog).not.toContain("interval");
+
+    const subscriptionsRoute = fs.readFileSync(
+      path.join(cwd, "src/app/api/payments/subscriptions/route.ts"),
+      "utf8",
+    );
+    expect(subscriptionsRoute).toContain("createEazoSubscriptionsRoute");
+    expect(subscriptionsRoute).not.toContain("/api/open/payments/subscriptions");
+
+    const managementPanel = fs.readFileSync(
+      path.join(cwd, "src/components/eazo-payments/SubscriptionManagementPanel.tsx"),
+      "utf8",
+    );
+    expect(managementPanel).toContain("EazoSubscriptionManagementPanel");
+    assertNoLegacyPaymentFlowSource(managementPanel, "SubscriptionManagementPanel.tsx");
   });
 
   it("ships a complete one-time unlock example with SDK-owned lifecycle code", () => {

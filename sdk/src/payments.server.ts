@@ -5,6 +5,8 @@ import {
   EAZO_PAYMENT_MODE,
   EazoPaymentApiError,
   normalizeEazoCheckoutResult,
+  type EazoAppSubscription,
+  type EazoAppSubscriptionsResponse,
   type CreateEazoCheckoutInput,
   type CreateEazoCheckoutResult,
   type EazoCheckoutSessionRequest,
@@ -178,6 +180,75 @@ export async function getEazoEntitlementStatus(
   return data;
 }
 
+export async function listEazoSubscriptions(
+  options: { appUserId: string; limit?: number; offset?: number },
+): Promise<EazoAppSubscriptionsResponse> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const query = new URLSearchParams({
+    app_id: appId,
+    app_user_id: options.appUserId,
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
+
+  const response = await fetch(`${apiBase}/api/open/payments/subscriptions?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${privateKey}` },
+    cache: "no-store",
+  });
+
+  const data = (await readJson(response)) as EazoAppSubscriptionsResponse & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Subscription list failed");
+  }
+  return data;
+}
+
+async function updateEazoSubscription(
+  subscriptionId: string,
+  action: "cancel" | "resume",
+  options: { appUserId: string },
+): Promise<{ subscription: EazoAppSubscription }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const response = await fetch(
+    `${apiBase}/api/open/payments/subscriptions/${encodeURIComponent(subscriptionId)}/${action}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${privateKey}`,
+      },
+      body: JSON.stringify({
+        app_id: appId,
+        app_user_id: options.appUserId,
+      }),
+    },
+  );
+
+  const data = (await readJson(response)) as { subscription: EazoAppSubscription } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(
+      response.status,
+      data,
+      action === "cancel" ? "Subscription cancel failed" : "Subscription resume failed",
+    );
+  }
+  return data;
+}
+
+export function cancelEazoSubscription(
+  subscriptionId: string,
+  options: { appUserId: string },
+) {
+  return updateEazoSubscription(subscriptionId, "cancel", options);
+}
+
+export function resumeEazoSubscription(
+  subscriptionId: string,
+  options: { appUserId: string },
+) {
+  return updateEazoSubscription(subscriptionId, "resume", options);
+}
+
 export type {
   CreateEazoCheckoutInput,
   CreateEazoCheckoutResult,
@@ -185,7 +256,9 @@ export type {
   EazoCheckoutSessionResponse,
   EazoEntitlement,
   EazoEntitlementStatusValue,
-  EazoPaymentInterval,
+  EazoAppSubscription,
+  EazoAppSubscriptionStatus,
+  EazoAppSubscriptionsResponse,
   EazoPaymentMode,
   EazoPaymentApiErrorBody,
   EazoPaymentCurrency,

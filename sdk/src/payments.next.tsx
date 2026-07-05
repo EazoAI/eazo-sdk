@@ -1,34 +1,22 @@
-import * as React from "react";
-
 import {
-  clearRememberedEazoPaymentId,
-  getEazoPaymentErrorMessage,
-  readEazoPaymentIdFromUrl,
-  readRememberedEazoPaymentId,
-  type EazoPaymentApiErrorBody,
   EazoPaymentApiError,
   type EazoPaymentProduct,
-  type EazoPaymentStatus,
 } from "./payments";
-import { getEazoPaymentSessionHeaders, refreshEazoEntitlement } from "./payments.react";
 import {
+  cancelEazoSubscription,
   createEazoCheckoutSession,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
+  listEazoSubscriptions,
+  resumeEazoSubscription,
 } from "./payments.server";
 import { requireAuth } from "./server";
 
 type JsonBody = Record<string, unknown>;
 
-type RequestLike = {
-  url: string;
-  headers: { get(name: string): string | null };
-  json: () => Promise<unknown>;
-};
-
 export type EazoCheckoutRouteOptions = {
   getProduct: (productKey: string) => EazoPaymentProduct | null | undefined;
-  getUser?: (request: { headers: { get(name: string): string | null } }) => ReturnType<typeof requireAuth>;
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
 };
 
 function jsonResponse(body: JsonBody, init?: ResponseInit) {
@@ -134,7 +122,7 @@ function firstBodyString(body: JsonBody, names: readonly string[]) {
 }
 
 export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
-  return async function POST(request: RequestLike) {
+  return async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const bodyRecord = body && typeof body === "object" ? body as JsonBody : {};
     const productKey = firstBodyString(bodyRecord, ["productKey", "product_key", "key"]) || "premium";
@@ -183,9 +171,9 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
 }
 
 export function createEazoPaymentStatusRoute(options: {
-  getUser?: (request: { headers: { get(name: string): string | null } }) => ReturnType<typeof requireAuth>;
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
 } = {}) {
-  return async function GET(request: { url: string; headers: { get(name: string): string | null } }) {
+  return async function GET(request: Request) {
     const paymentId = firstSearchParam(
       new URL(request.url).searchParams,
       ["paymentId", "payment_id"],
@@ -220,9 +208,9 @@ export function createEazoPaymentStatusRoute(options: {
 }
 
 export function createEazoEntitlementRoute(options: {
-  getUser?: (request: { headers: { get(name: string): string | null } }) => ReturnType<typeof requireAuth>;
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
 } = {}) {
-  return async function GET(request: { url: string; headers: { get(name: string): string | null } }) {
+  return async function GET(request: Request) {
     const productKey = firstSearchParam(
       new URL(request.url).searchParams,
       ["productKey", "product_key", "key"],
@@ -258,126 +246,88 @@ export function createEazoEntitlementRoute(options: {
   };
 }
 
-const POLLABLE_STATUSES = new Set(["pending", "processing"]);
+export function createEazoSubscriptionsRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function GET(request: Request) {
+    const params = new URL(request.url).searchParams;
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
 
-export type EazoPaymentSuccessPageProps = {
-  homeHref?: string;
-  maxAttempts?: number;
-  pollIntervalMs?: number;
-};
-
-export function EazoPaymentSuccessPage({
-  homeHref = "/",
-  maxAttempts = 15,
-  pollIntervalMs = 1500,
-}: EazoPaymentSuccessPageProps) {
-  const [status, setStatus] = React.useState<EazoPaymentStatus | null>(null);
-  const [error, setError] = React.useState("");
-
-  React.useEffect(() => {
-    const paymentId = readEazoPaymentIdFromUrl() || readRememberedEazoPaymentId();
-    if (!paymentId) {
-      setError("We could not find this payment. Please return to the app and try again.");
-      return;
-    }
-    const confirmedPaymentId = paymentId;
-
-    let cancelled = false;
-    let attempts = 0;
-
-    async function poll() {
-      attempts += 1;
-      const headers = await getEazoPaymentSessionHeaders();
-      const response = await fetch(`/api/payments/status?paymentId=${encodeURIComponent(confirmedPaymentId)}`, {
-        headers,
-        cache: "no-store",
+    try {
+      const subscriptions = await listEazoSubscriptions({
+        appUserId: authResult.user.id,
+        limit: Number(params.get("limit") || 50),
+        offset: Number(params.get("offset") || 0),
       });
-      const data = await response.json().catch(() => ({}));
-      if (cancelled) return;
-
-      if (!response.ok) {
-        setError(getEazoPaymentErrorMessage(data as EazoPaymentApiErrorBody, "Payment status failed"));
-        return;
+      return jsonResponse(subscriptions as unknown as JsonBody);
+    } catch (error) {
+      if (error instanceof EazoPaymentApiError) {
+        return jsonResponse(
+          { error: error.message, platform: error.body },
+          { status: error.status },
+        );
       }
-
-      const nextStatus = data as EazoPaymentStatus;
-      setStatus(nextStatus);
-      if (nextStatus.paid) {
-        const productKey =
-          nextStatus.entitlement?.product_key ||
-          nextStatus.metadata?.product_key ||
-          new URLSearchParams(window.location.search).get("product") ||
-          "premium";
-        await refreshEazoEntitlement(productKey);
-        clearRememberedEazoPaymentId();
-        return;
-      }
-
-      if (attempts < maxAttempts && POLLABLE_STATUSES.has(nextStatus.status)) {
-        window.setTimeout(poll, pollIntervalMs);
-      }
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : "Subscription list failed" },
+        { status: 500 },
+      );
     }
-
-    poll().catch((err) => {
-      setError(err instanceof Error ? err.message : "Payment status failed");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [maxAttempts, pollIntervalMs]);
-
-  if (error) {
-    return (
-      <main>
-        <h1>Payment needs attention</h1>
-        <p>{error}</p>
-        <a href={homeHref}>Return home</a>
-      </main>
-    );
-  }
-
-  if (status?.paid) {
-    return (
-      <main>
-        <h1>Premium unlocked</h1>
-        <p>Your payment is complete.</p>
-        <a href={homeHref}>Continue</a>
-      </main>
-    );
-  }
-
-  if (status && !POLLABLE_STATUSES.has(status.status)) {
-    return (
-      <main>
-        <h1>Payment was not completed</h1>
-        <p>Status: {status.status}</p>
-        <a href={homeHref}>Try again</a>
-      </main>
-    );
-  }
-
-  return (
-    <main>
-      <h1>Confirming payment</h1>
-      <p>This usually takes a few seconds.</p>
-    </main>
-  );
+  };
 }
 
-export type EazoPaymentCancelPageProps = {
-  homeHref?: string;
-};
+async function subscriptionActionResponse(
+  request: Request,
+  subscriptionId: string,
+  action: "cancel" | "resume",
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>,
+) {
+  const authResult = getUser ? getUser(request) : requireAuth(request);
+  if (!authResult.ok) return authResult.response;
 
-export function EazoPaymentCancelPage({ homeHref = "/" }: EazoPaymentCancelPageProps) {
-  React.useEffect(() => {
-    clearRememberedEazoPaymentId();
-  }, []);
+  try {
+    const result = action === "cancel"
+      ? await cancelEazoSubscription(subscriptionId, { appUserId: authResult.user.id })
+      : await resumeEazoSubscription(subscriptionId, { appUserId: authResult.user.id });
+    return jsonResponse(result as unknown as JsonBody);
+  } catch (error) {
+    if (error instanceof EazoPaymentApiError) {
+      return jsonResponse(
+        { error: error.message, platform: error.body },
+        { status: error.status },
+      );
+    }
+    return jsonResponse(
+      { error: error instanceof Error ? error.message : "Subscription update failed" },
+      { status: 500 },
+    );
+  }
+}
 
-  return (
-    <main>
-      <h1>Checkout cancelled</h1>
-      <p>No payment was collected.</p>
-      <a href={homeHref}>Return home</a>
-    </main>
-  );
+export function createEazoCancelSubscriptionRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(
+    request: Request,
+    context: { params: Promise<{ subscriptionId?: string; id?: string }> },
+  ) {
+    const params = await context.params;
+    const subscriptionId = params.subscriptionId || params.id || "";
+    if (!subscriptionId) return jsonResponse({ error: "Missing subscriptionId" }, { status: 400 });
+    return subscriptionActionResponse(request, subscriptionId, "cancel", options.getUser);
+  };
+}
+
+export function createEazoResumeSubscriptionRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(
+    request: Request,
+    context: { params: Promise<{ subscriptionId?: string; id?: string }> },
+  ) {
+    const params = await context.params;
+    const subscriptionId = params.subscriptionId || params.id || "";
+    if (!subscriptionId) return jsonResponse({ error: "Missing subscriptionId" }, { status: 400 });
+    return subscriptionActionResponse(request, subscriptionId, "resume", options.getUser);
+  };
 }

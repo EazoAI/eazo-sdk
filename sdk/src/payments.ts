@@ -15,16 +15,6 @@ export const EAZO_PAYMENT_MODE = {
 export type EazoPaymentMode =
   (typeof EAZO_PAYMENT_MODE)[keyof typeof EAZO_PAYMENT_MODE];
 
-export const EAZO_PAYMENT_INTERVAL = {
-  DAY: "day",
-  WEEK: "week",
-  MONTH: "month",
-  YEAR: "year",
-} as const;
-
-export type EazoPaymentInterval =
-  (typeof EAZO_PAYMENT_INTERVAL)[keyof typeof EAZO_PAYMENT_INTERVAL];
-
 export type EazoPaymentStatusValue =
   | "pending"
   | "processing"
@@ -39,6 +29,9 @@ export type EazoEntitlementStatusValue =
   | "checking"
   | "pending"
   | "active"
+  | "canceling"
+  | "past_due"
+  | "canceled"
   | "failed"
   | "expired"
   | "refunded"
@@ -53,7 +46,6 @@ export type EazoPaymentProduct = {
   currency: EazoPaymentCurrency;
   mode?: EazoPaymentMode;
   entitlementKey?: string;
-  interval?: EazoPaymentInterval;
 };
 
 export type EazoPaymentProductInput = Omit<EazoPaymentProduct, "entitlementKey"> & {
@@ -141,6 +133,40 @@ export type EazoPaymentStatus = {
   entitlement?: EazoEntitlement | null;
 };
 
+export type EazoAppSubscriptionStatus =
+  | "incomplete"
+  | "trialing"
+  | "active"
+  | "canceling"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "paused"
+  | "incomplete_expired";
+
+export type EazoAppSubscription = {
+  id: string;
+  app_id: string;
+  app_user_id: string;
+  product_key: string;
+  entitlement_key: string;
+  product_name?: string | null;
+  app_title?: string | null;
+  amount_total: number;
+  currency: EazoPaymentCurrency;
+  status: EazoAppSubscriptionStatus;
+  cancel_at_period_end: boolean;
+  current_period_start?: number | null;
+  current_period_end?: number | null;
+  canceled_at?: number | null;
+  latest_payment_id?: string | null;
+};
+
+export type EazoAppSubscriptionsResponse = {
+  items: EazoAppSubscription[];
+  pagination: { total: number; limit: number; offset: number };
+};
+
 export type EazoPaymentApiErrorBody = {
   error?: unknown;
   message?: unknown;
@@ -183,10 +209,6 @@ function normalizeEazoPaymentProduct(key: string, product: EazoPaymentProductInp
   if (typeof product.name !== "string" || product.name.trim().length === 0) {
     throw new Error(`Invalid Eazo payment product name for ${product.key}`);
   }
-  if (product.interval && !Object.values(EAZO_PAYMENT_INTERVAL).includes(product.interval)) {
-    throw new Error(`Invalid Eazo payment interval for ${product.key}: ${product.interval}`);
-  }
-
   return {
     ...product,
     mode: product.mode || EAZO_PAYMENT_MODE.ONE_TIME,

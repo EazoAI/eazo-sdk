@@ -11,9 +11,12 @@ import {
   defineEazoPaymentProducts
 } from "@eazo/sdk/payments";
 import {
+  createEazoCancelSubscriptionRoute,
   createEazoCheckoutRoute,
   createEazoEntitlementRoute,
-  createEazoPaymentStatusRoute
+  createEazoPaymentStatusRoute,
+  createEazoResumeSubscriptionRoute,
+  createEazoSubscriptionsRoute
 } from "@eazo/sdk/payments/next";
 import {
   assertCreateEazoCheckoutResultContract,
@@ -21,9 +24,13 @@ import {
   assertEazoCheckoutResponseContract,
   assertEazoEntitlementContract,
   assertEazoPaymentStatusContract,
+  assertEazoSubscriptionContract,
+  assertEazoSubscriptionsResponseContract,
   mockEazoCheckoutResponse,
   mockEazoEntitlement,
-  mockEazoPaymentStatus
+  mockEazoPaymentStatus,
+  mockEazoSubscription,
+  mockEazoSubscriptionsResponse
 } from "@eazo/sdk/payments/testing";
 import { getPaymentProduct, PAYMENT_PRODUCTS } from "./catalog";
 
@@ -87,7 +94,7 @@ describe("Eazo Payments integration contract", () => {
   });
 
   it("uses SDK payment constants and derives entitlement keys", () => {
-    expect(TEST_PRODUCT.mode).toBe(EAZO_PAYMENT_MODE.ONE_TIME);
+    expect(TEST_PRODUCT.mode).toBe(EAZO_PAYMENT_MODE.SUBSCRIPTION);
     expect(TEST_PRODUCT.currency).toBe(EAZO_PAYMENT_CURRENCY.USD);
     expect(TEST_PRODUCT.entitlementKey).toBe(TEST_PRODUCT.key);
   });
@@ -304,6 +311,64 @@ describe("Eazo Payments integration contract", () => {
       expect(aliasResponse.status).toBe(200);
       assertEazoEntitlementContract(await aliasResponse.json());
     }
+  });
+
+  it("handles local subscription list/cancel/resume route contracts", async () => {
+    const getUser = () => ({
+      ok: true as const,
+      user: { id: "app_user_test", email: "test@example.com", name: "Test", avatarUrl: null }
+    });
+
+    mockPlatformResponse(200, mockEazoSubscriptionsResponse());
+    const subscriptionsGET = createEazoSubscriptionsRoute({ getUser });
+    const listResponse = await subscriptionsGET(
+      new Request("https://app.example.com/api/payments/subscriptions")
+    );
+    expect(listResponse.status).toBe(200);
+    assertEazoSubscriptionsResponseContract(await listResponse.json());
+    expect(fetch).toHaveBeenCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
+      {
+        headers: { Authorization: "Bearer eazo_private_test" },
+        cache: "no-store"
+      }
+    );
+
+    mockPlatformResponse(200, {
+      subscription: mockEazoSubscription({ id: "cas_test_eazo", cancel_at_period_end: true })
+    });
+    const cancelPOST = createEazoCancelSubscriptionRoute({ getUser });
+    const cancelResponse = await cancelPOST(
+      new Request("https://app.example.com/api/payments/subscriptions/cas_test_eazo/cancel"),
+      { params: Promise.resolve({ subscriptionId: "cas_test_eazo" }) }
+    );
+    expect(cancelResponse.status).toBe(200);
+    assertEazoSubscriptionContract((await cancelResponse.json()).subscription);
+    expect(fetch).toHaveBeenLastCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" })
+      })
+    );
+
+    mockPlatformResponse(200, {
+      subscription: mockEazoSubscription({ id: "cas_test_eazo", cancel_at_period_end: false })
+    });
+    const resumePOST = createEazoResumeSubscriptionRoute({ getUser });
+    const resumeResponse = await resumePOST(
+      new Request("https://app.example.com/api/payments/subscriptions/cas_test_eazo/resume"),
+      { params: Promise.resolve({ subscriptionId: "cas_test_eazo" }) }
+    );
+    expect(resumeResponse.status).toBe(200);
+    assertEazoSubscriptionContract((await resumeResponse.json()).subscription);
+    expect(fetch).toHaveBeenLastCalledWith(
+      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/resume",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" })
+      })
+    );
   });
 
   it("uses public proxy headers for Stripe return URLs in E2B previews", async () => {

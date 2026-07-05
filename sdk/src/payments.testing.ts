@@ -2,6 +2,8 @@ import type {
   CreateEazoCheckoutResult,
   EazoCheckoutSessionResponse,
   EazoCheckoutSessionRequest,
+  EazoAppSubscription,
+  EazoAppSubscriptionsResponse,
   EazoEntitlement,
   EazoEntitlementStatusValue,
   EazoPaymentStatus,
@@ -51,6 +53,40 @@ export function mockEazoEntitlement(
     current_period_end: null,
     metadata: {},
     updated_at: 1_800_000_000_000,
+    ...overrides,
+  };
+}
+
+export function mockEazoSubscription(
+  overrides: Partial<EazoAppSubscription> = {},
+): EazoAppSubscription {
+  return {
+    id: "cas_test_eazo",
+    app_id: "app_test",
+    app_user_id: "app_user_test",
+    product_key: "premium",
+    entitlement_key: "premium",
+    product_name: "Premium monthly subscription",
+    app_title: "Test app",
+    amount_total: 499,
+    currency: "usd",
+    status: "active",
+    cancel_at_period_end: false,
+    current_period_start: 1_800_000_000,
+    current_period_end: 1_802_592_000,
+    canceled_at: null,
+    latest_payment_id: "cap_test_eazo",
+    ...overrides,
+  };
+}
+
+export function mockEazoSubscriptionsResponse(
+  overrides: Partial<EazoAppSubscriptionsResponse> = {},
+): EazoAppSubscriptionsResponse {
+  const items = overrides.items || [mockEazoSubscription()];
+  return {
+    items,
+    pagination: { total: items.length, limit: 50, offset: 0 },
     ...overrides,
   };
 }
@@ -163,7 +199,7 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
   assertNumber(body.quantity, "quantity");
   assertMetadata(body.metadata, "metadata");
   assertString(body.idempotency_key, "idempotency_key");
-  for (const forbidden of ["amount", "title", "product_id", "checkout_url", "order_id"]) {
+  for (const forbidden of ["amount", "title", "product_id", "checkout_url", "order_id", "interval"]) {
     if (Object.prototype.hasOwnProperty.call(body, forbidden)) {
       throw new Error(`Eazo checkout request must not include ${forbidden}`);
     }
@@ -244,7 +280,7 @@ export function assertEazoEntitlementContract(entitlement: EazoEntitlement) {
   if (body.app_user_id !== undefined) assertString(body.app_user_id, "app_user_id");
   assertString(body.product_key, "product_key");
   assertString(body.entitlement_key, "entitlement_key");
-  if (!["inactive", "checking", "pending", "active", "failed", "expired", "refunded", "disputed"].includes(String(body.status))) {
+  if (!["inactive", "checking", "pending", "active", "canceling", "past_due", "canceled", "failed", "expired", "refunded", "disputed"].includes(String(body.status))) {
     throw new Error("status must be a supported entitlement status");
   }
   assertBoolean(body.active, "active");
@@ -253,6 +289,52 @@ export function assertEazoEntitlementContract(entitlement: EazoEntitlement) {
   assertNullableNumber(body.current_period_end, "current_period_end");
   if (body.metadata !== undefined) assertMetadata(body.metadata, "metadata");
   assertNullableNumber(body.updated_at, "updated_at");
+}
+
+export function assertEazoSubscriptionContract(subscription: EazoAppSubscription) {
+  const body = subscription as unknown as Record<string, unknown>;
+  assertExactKeys(
+    body,
+    [
+      "id",
+      "app_id",
+      "app_user_id",
+      "product_key",
+      "entitlement_key",
+      ...(body.product_name === undefined ? [] : ["product_name"]),
+      ...(body.app_title === undefined ? [] : ["app_title"]),
+      "amount_total",
+      "currency",
+      "status",
+      "cancel_at_period_end",
+      ...(body.current_period_start === undefined ? [] : ["current_period_start"]),
+      ...(body.current_period_end === undefined ? [] : ["current_period_end"]),
+      ...(body.canceled_at === undefined ? [] : ["canceled_at"]),
+      ...(body.latest_payment_id === undefined ? [] : ["latest_payment_id"]),
+    ],
+    "Eazo subscription",
+  );
+  assertString(body.id, "id");
+  assertString(body.app_id, "app_id");
+  assertString(body.app_user_id, "app_user_id");
+  assertString(body.product_key, "product_key");
+  assertString(body.entitlement_key, "entitlement_key");
+  assertNumber(body.amount_total, "amount_total");
+  if (body.currency !== "usd") throw new Error("currency must be usd");
+  if (!["incomplete", "trialing", "active", "canceling", "past_due", "canceled", "unpaid", "paused", "incomplete_expired"].includes(String(body.status))) {
+    throw new Error("status must be a supported subscription status");
+  }
+  assertBoolean(body.cancel_at_period_end, "cancel_at_period_end");
+}
+
+export function assertEazoSubscriptionsResponseContract(response: EazoAppSubscriptionsResponse) {
+  assertRecord(response, "Eazo subscriptions response");
+  if (!Array.isArray(response.items)) throw new Error("items must be an array");
+  for (const subscription of response.items) assertEazoSubscriptionContract(subscription);
+  assertRecord(response.pagination, "pagination");
+  assertNumber(response.pagination.total, "pagination.total");
+  assertNumber(response.pagination.limit, "pagination.limit");
+  assertNumber(response.pagination.offset, "pagination.offset");
 }
 
 export function assertLocalCheckoutBodyContract(body: unknown) {
