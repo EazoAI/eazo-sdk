@@ -607,7 +607,10 @@ describe("Eazo Payments SDK", () => {
 
       render(<EazoPaymentSuccessPage maxAttempts={2} pollIntervalMs={10} />);
 
-      expect(screen.getByText("Confirming payment")).toBeTruthy();
+      const title = screen.getByText("Confirming payment");
+      expect(title).toBeTruthy();
+      expect(title.closest("main")?.getAttribute("style")).toContain("place-items: center");
+      expect(title.closest("section")?.getAttribute("style")).toContain("border-radius: 28px");
       await act(async () => {
         await Promise.resolve();
         await Promise.resolve();
@@ -700,7 +703,10 @@ describe("Eazo Payments SDK", () => {
     render(<EazoSubscriptionManagementPanel />);
 
     expect(await screen.findByText("Test app")).toBeTruthy();
-    screen.getByRole("button", { name: "Resume" }).click();
+    expect(screen.getByText("Canceling")).toBeTruthy();
+    const resumeButton = screen.getByRole("button", { name: "Resume" });
+    expect(resumeButton.getAttribute("style")).toContain("border-radius: 999px");
+    resumeButton.click();
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       "/api/payments/subscriptions/cas_test_eazo/resume",
@@ -740,8 +746,10 @@ describe("Eazo Payments SDK", () => {
     const assign = vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
 
     render(<EazoPaymentButton productKey="premium">Upgrade</EazoPaymentButton>);
-    await screen.findByText("Upgrade");
-    screen.getByText("Upgrade").click();
+    const button = await screen.findByRole("button", { name: "Upgrade" });
+    expect(button.getAttribute("style")).toContain("border-radius: 999px");
+    expect(button.getAttribute("style")).toContain("linear-gradient");
+    button.click();
 
     await waitFor(() => expect(auth.login).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_test"));
@@ -775,10 +783,14 @@ describe("Eazo Payments SDK", () => {
       ) as unknown as typeof fetch;
     const assign = vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
 
-    render(<EazoPaymentUnlockPanel productKey="premium" />);
+    const { container } = render(<EazoPaymentUnlockPanel productKey="premium" />);
 
-    const button = await screen.findByRole("button", { name: "Continue payment" });
+    await screen.findByRole("button", { name: "Continue payment" });
+    expect(container.querySelector("section")?.getAttribute("style")).toContain("border-radius: 24px");
+    expect(screen.getByText("Payment pending")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Continue payment" });
     expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(button.getAttribute("style")).toContain("linear-gradient");
     button.click();
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_retry"));
@@ -1180,6 +1192,9 @@ describe("Eazo Payments SDK", () => {
     const homePage = fs.readFileSync(path.join(exampleDir, "src/app/page.tsx"), "utf8");
     expect(homePage).toContain("PaymentUnlockPanel");
     expect(homePage).toContain("PremiumEntitlementGate");
+    expect(homePage).toContain("Premium access is active");
+    expect(homePage).toContain("Free experience");
+    expect(homePage).toContain("SDK-owned payment lifecycle");
 
     const checkoutRoute = fs.readFileSync(
       path.join(exampleDir, "src/app/api/payments/checkout/route.ts"),
@@ -1203,6 +1218,27 @@ describe("Eazo Payments SDK", () => {
       const source = fs.readFileSync(path.join(exampleDir, file), "utf8");
       assertNoLegacyPaymentFlowSource(source, file);
     }
+  });
+
+  it("ships a polished monthly subscription example with access and management states", () => {
+    const exampleDir = path.join(__dirname, "../../examples/payments/monthly-subscription");
+    const homePage = fs.readFileSync(path.join(exampleDir, "src/app/page.tsx"), "utf8");
+    const panel = fs.readFileSync(
+      path.join(exampleDir, "src/components/eazo-payments/PaymentUnlockPanel.tsx"),
+      "utf8",
+    );
+    const managementPanel = fs.readFileSync(
+      path.join(exampleDir, "src/components/eazo-payments/SubscriptionManagementPanel.tsx"),
+      "utf8",
+    );
+
+    expect(homePage).toContain("Subscribe to Premium");
+    expect(homePage).toContain("Subscription access is active");
+    expect(homePage).toContain("SubscriptionManagementPanel");
+    expect(homePage).toContain("SDK-owned subscription lifecycle");
+    expect(panel).toContain("EazoPaymentUnlockPanel");
+    expect(managementPanel).toContain("EazoSubscriptionManagementPanel");
+    assertNoLegacyPaymentFlowSource(homePage, "monthly-subscription/src/app/page.tsx");
   });
 
   it.each([
