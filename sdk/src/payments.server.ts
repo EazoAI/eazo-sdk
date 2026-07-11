@@ -73,7 +73,7 @@ export function buildEazoCheckoutRequest(
   assertEazoPaymentMode(mode);
   assertEazoPaymentCurrency(input.currency);
   if (!Number.isInteger(input.unitAmount) || input.unitAmount <= 0) {
-    throw new Error("unitAmount must be a positive integer in cents");
+    throw new Error("unitAmount must be a positive integer in minor currency units");
   }
   if (input.quantity !== undefined && (!Number.isInteger(input.quantity) || input.quantity <= 0)) {
     throw new Error("quantity must be a positive integer");

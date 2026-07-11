@@ -1,14 +1,16 @@
 import type {
   CreateEazoCheckoutResult,
-  EazoCheckoutSessionResponse,
-  EazoCheckoutSessionRequest,
   EazoAppSubscription,
   EazoAppSubscriptionsResponse,
+  EazoCheckoutSessionRequest,
+  EazoCheckoutSessionResponse,
   EazoEntitlement,
   EazoEntitlementStatusValue,
+  EazoPaymentCurrency,
   EazoPaymentStatus,
   EazoPaymentStatusValue,
 } from "./payments";
+import { EAZO_PAYMENT_CURRENCY } from "./payments";
 
 export function mockEazoCheckoutResponse(
   overrides: Partial<EazoCheckoutSessionResponse> = {},
@@ -118,6 +120,12 @@ function assertString(value: unknown, name: string) {
   }
 }
 
+function assertCurrency(value: unknown, name: string): asserts value is EazoPaymentCurrency {
+  if (!Object.values(EAZO_PAYMENT_CURRENCY).includes(value as EazoPaymentCurrency)) {
+    throw new Error(`${name} must be a supported Eazo payment currency`);
+  }
+}
+
 function assertNumber(value: unknown, name: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${name} must be a finite number`);
@@ -192,7 +200,7 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
   assertString(body.product_key, "product_key");
   assertString(body.entitlement_key, "entitlement_key");
   assertNumber(body.unit_amount, "unit_amount");
-  if (body.currency !== "usd") throw new Error("currency must be usd");
+  assertCurrency(body.currency, "currency");
   assertString(body.product_name, "product_name");
   assertString(body.success_url, "success_url");
   assertString(body.cancel_url, "cancel_url");
@@ -249,7 +257,7 @@ export function assertEazoPaymentStatusContract(status: EazoPaymentStatus) {
   }
   assertBoolean(body.paid, "paid");
   assertNumber(body.amount_total, "amount_total");
-  if (body.currency !== "usd") throw new Error("currency must be usd");
+  assertCurrency(body.currency, "currency");
   assertString(body.product_name, "product_name");
   assertMetadata(body.metadata, "metadata");
   if (body.entitlement !== undefined && body.entitlement !== null) {
@@ -320,7 +328,7 @@ export function assertEazoSubscriptionContract(subscription: EazoAppSubscription
   assertString(body.product_key, "product_key");
   assertString(body.entitlement_key, "entitlement_key");
   assertNumber(body.amount_total, "amount_total");
-  if (body.currency !== "usd") throw new Error("currency must be usd");
+  assertCurrency(body.currency, "currency");
   if (!["incomplete", "trialing", "active", "canceling", "past_due", "canceled", "unpaid", "paused", "incomplete_expired"].includes(String(body.status))) {
     throw new Error("status must be a supported subscription status");
   }

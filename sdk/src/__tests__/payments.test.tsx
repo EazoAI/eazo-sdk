@@ -222,6 +222,33 @@ describe("Eazo Payments SDK", () => {
     expect(products.premium.entitlementKey).toBe("premium");
   });
 
+  it("accepts non-USD currencies from the SDK enum", () => {
+    const products = defineEazoPaymentProducts({
+      premium_cny: {
+        key: "premium_cny",
+        name: "Premium unlock CNY",
+        unitAmount: 1999,
+        currency: EAZO_PAYMENT_CURRENCY.CNY,
+        mode: EAZO_PAYMENT_MODE.ONE_TIME,
+      },
+    } as const);
+
+    const request = buildEazoCheckoutRequest({
+      productKey: products.premium_cny.key,
+      productName: products.premium_cny.name,
+      unitAmount: products.premium_cny.unitAmount,
+      currency: products.premium_cny.currency,
+      mode: products.premium_cny.mode,
+      entitlementKey: products.premium_cny.entitlementKey,
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+    });
+
+    assertEazoCheckoutRequestContract(request);
+    expect(request.currency).toBe(EAZO_PAYMENT_CURRENCY.CNY);
+    expect(request.unit_amount).toBe(1999);
+  });
+
   it("rejects invalid product catalog values before checkout", () => {
     expect(() =>
       defineEazoPaymentProducts({

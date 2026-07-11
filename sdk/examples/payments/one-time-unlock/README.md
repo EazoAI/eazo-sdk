@@ -57,8 +57,10 @@ Rules:
 
 - `key` is a stable ledger identifier used in payment metadata and entitlement lookups.
 - `entitlementKey` defaults to `key`; only set it manually when multiple products unlock the same entitlement.
-- `unitAmount` is cents.
-- `mode` and `currency` use SDK constants, not raw strings.
+- `unitAmount` is the integer amount in minor currency units, such as cents for USD or fen for CNY.
+- `currency` is required. Use an SDK enum value such as `EAZO_PAYMENT_CURRENCY.USD` or `EAZO_PAYMENT_CURRENCY.CNY`, not a raw string.
+- The scaffold defaults to USD, but generated apps should use the currency the creator confirmed for the product.
+- `mode` uses SDK constants, not raw strings.
 - `defineEazoPaymentProducts(...)` validates keys, modes, currency, and price shape.
 
 ### `PaymentUnlockPanel.tsx`
