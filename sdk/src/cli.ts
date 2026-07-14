@@ -139,10 +139,10 @@ export type PaymentUnlockPanelProps = EazoPaymentUnlockPanelProps;
 export function PaymentUnlockPanel(props: PaymentUnlockPanelProps) {
   return (
     <EazoPaymentUnlockPanel
-      title="Premium unlock"
-      description="Unlock the paid experience for this app."
-      ctaLabel="Unlock premium"
-      activeLabel="Premium active"
+      title="Paid access"
+      description="Sign in and pay securely with Eazo."
+      ctaLabel="Continue to payment"
+      activeLabel="Access active"
       pendingLabel="Continue payment"
       {...props}
     />
@@ -192,10 +192,10 @@ export type SubscriptionManagementPanelProps = {
 export function SubscriptionManagementPanel({ children }: SubscriptionManagementPanelProps) {
   return (
     <EazoSubscriptionManagementPanel
-      title="Your app subscriptions"
+      title="Subscriptions"
       emptyLabel="No subscriptions yet"
-      cancelLabel="Cancel renewal"
-      resumeLabel="Resume renewal"
+      cancelLabel="Cancel"
+      resumeLabel="Resume"
     >
       {children}
     </EazoSubscriptionManagementPanel>
@@ -699,8 +699,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@eazo/sdk/payments/react", () => ({
   EazoPaymentUnlockPanel: ({
-    title = "Premium unlock",
-    ctaLabel = "Unlock premium",
+    title = "Paid access",
+    ctaLabel = "Continue to payment",
   }: {
     title?: React.ReactNode;
     ctaLabel?: React.ReactNode;
@@ -750,8 +750,8 @@ describe("Eazo payment UI contract", () => {
   it("uses the SDK lifecycle panel for checkout UI", () => {
     render(<PaymentUnlockPanel />);
 
-    expect(screen.getByText("Premium unlock")).toBeTruthy();
-    screen.getByRole("button", { name: "Unlock premium" }).click();
+    expect(screen.getByText("Paid access")).toBeTruthy();
+    screen.getByRole("button", { name: "Continue to payment" }).click();
     expect(mocks.checkout).toHaveBeenCalledTimes(1);
   });
 

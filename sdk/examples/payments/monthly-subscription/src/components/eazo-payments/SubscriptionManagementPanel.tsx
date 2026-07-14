@@ -13,10 +13,10 @@ export type SubscriptionManagementPanelProps = {
 export function SubscriptionManagementPanel({ children }: SubscriptionManagementPanelProps) {
   return (
     <EazoSubscriptionManagementPanel
-      title="Your app subscriptions"
+      title="Subscriptions"
       emptyLabel="No subscriptions yet"
-      cancelLabel="Cancel renewal"
-      resumeLabel="Resume renewal"
+      cancelLabel="Cancel"
+      resumeLabel="Resume"
     >
       {children}
     </EazoSubscriptionManagementPanel>

@@ -65,9 +65,11 @@ Rules:
 
 ### `PaymentUnlockPanel.tsx`
 
-This is the reusable UI shell. Generated apps may edit markup, classes, and
-text, but the payment lifecycle must stay inside SDK components. The scaffolded
-panel wraps `EazoPaymentUnlockPanel`; custom layouts can use its render prop or
+This is the reusable UI shell. The default UI is intentionally plain and should
+be treated as a working reference, not the final visual design. Generated apps
+may edit markup, classes, and text so the payment surface matches the app, but
+the payment lifecycle must stay inside SDK components. The scaffolded panel
+wraps `EazoPaymentUnlockPanel`; custom layouts can use its render prop or
 `EazoPaymentLifecycle`.
 
 The SDK lifecycle owns:
@@ -79,7 +81,7 @@ The SDK lifecycle owns:
 - pending, active, failed, refunded, and disputed states
 - visible error state
 
-The default button calls only the SDK-owned checkout action:
+The default button calls only the SDK-owned checkout action.
 
 Do not replace it with `fetch("/api/payments/checkout")`, `data.url`,
 `window.open`, or Stripe SDK calls.
@@ -187,7 +189,7 @@ npm run typecheck
 ## What Agents May Customize
 
 - product names and prices in `catalog.ts`
-- visual markup, class names, and copy in `PaymentUnlockPanel.tsx`
+- visual markup, class names, and copy in `PaymentUnlockPanel.tsx`; restyle it to match the app
 - placement of `PaymentUnlockPanel` and `PremiumEntitlementGate`
 - surrounding page layout and styling
 

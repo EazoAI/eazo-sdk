@@ -109,9 +109,9 @@ export function EazoPaymentSuccessPage({
       <PaymentStateShell
         className={className}
         tone="success"
-        eyebrow="Access ready"
-        title="Premium unlocked"
-        description="Your payment is complete and access is now active."
+        eyebrow="Payment"
+        title="Access ready"
+        description="Your payment is complete."
         actionHref={homeHref}
         actionLabel={continueLabel}
         detail={status.product_name}
@@ -138,9 +138,9 @@ export function EazoPaymentSuccessPage({
     <PaymentStateShell
       className={className}
       tone="processing"
-      eyebrow="Secure checkout"
+      eyebrow="Payment"
       title="Confirming payment"
-      description="This usually takes a few seconds. Keep this page open while we activate your access."
+      description="This usually takes a few seconds."
     />
   );
 }
@@ -239,36 +239,35 @@ const paymentPageStyles = {
     display: "grid",
     placeItems: "center",
     padding: "24px",
-    background:
-      "radial-gradient(circle at 20% 0%, rgba(251, 146, 60, 0.14), transparent 32%), #fffaf4",
-    color: "#171717",
+    background: "#f9fafb",
+    color: "#111827",
     fontFamily:
       "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   } satisfies React.CSSProperties,
   card: {
     width: "min(100%, 420px)",
     boxSizing: "border-box",
-    border: "1px solid rgba(23, 23, 23, 0.08)",
-    borderRadius: 28,
-    padding: "32px 24px",
-    background: "rgba(255, 255, 255, 0.92)",
-    boxShadow: "0 28px 70px rgba(15, 23, 42, 0.13)",
+    border: "1px solid #e5e7eb",
+    borderRadius: 16,
+    padding: "28px 22px",
+    background: "#fff",
+    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
     textAlign: "center",
   } satisfies React.CSSProperties,
   iconWrap: {
-    width: 64,
-    height: 64,
-    margin: "0 auto 18px",
+    width: 48,
+    height: 48,
+    margin: "0 auto 16px",
     border: "1px solid",
-    borderRadius: 20,
+    borderRadius: 12,
     display: "grid",
     placeItems: "center",
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: 800,
   } satisfies React.CSSProperties,
   spinner: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: "999px",
     border: "3px solid rgba(194, 65, 12, 0.18)",
     borderTopColor: "#c2410c",
@@ -277,31 +276,31 @@ const paymentPageStyles = {
   eyebrow: {
     margin: "0 0 8px",
     fontSize: 12,
-    fontWeight: 800,
-    letterSpacing: "0.12em",
+    fontWeight: 750,
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
   } satisfies React.CSSProperties,
   title: {
     margin: 0,
-    fontSize: "clamp(28px, 8vw, 38px)",
-    lineHeight: 1.05,
+    fontSize: "clamp(24px, 7vw, 32px)",
+    lineHeight: 1.12,
     letterSpacing: 0,
   } satisfies React.CSSProperties,
   description: {
-    margin: "14px auto 0",
+    margin: "12px auto 0",
     maxWidth: 330,
-    color: "#737373",
-    fontSize: 16,
+    color: "#6b7280",
+    fontSize: 15,
     lineHeight: 1.55,
   } satisfies React.CSSProperties,
   detail: {
     margin: "18px auto 0",
     width: "fit-content",
     maxWidth: "100%",
-    borderRadius: 999,
+    borderRadius: 10,
     padding: "8px 12px",
-    background: "#f5f5f4",
-    color: "#525252",
+    background: "#f3f4f6",
+    color: "#4b5563",
     fontSize: 13,
     fontWeight: 700,
   } satisfies React.CSSProperties,
@@ -312,12 +311,11 @@ const paymentPageStyles = {
     minHeight: 48,
     marginTop: 24,
     padding: "0 22px",
-    borderRadius: 999,
-    background: "#171717",
+    borderRadius: 12,
+    background: "#111827",
     color: "#fff",
     textDecoration: "none",
     fontSize: 15,
-    fontWeight: 800,
-    boxShadow: "0 14px 30px rgba(23, 23, 23, 0.18)",
+    fontWeight: 750,
   } satisfies React.CSSProperties,
 };

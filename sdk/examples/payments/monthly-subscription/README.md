@@ -74,8 +74,10 @@ Rules:
 
 ### `PaymentUnlockPanel.tsx`
 
-This reusable UI shell wraps `EazoPaymentUnlockPanel`. Generated apps may edit
-markup, classes, and text, but the payment lifecycle must stay inside SDK
+This reusable UI shell wraps `EazoPaymentUnlockPanel`. The default UI is
+intentionally plain and should be treated as a working reference, not the final
+visual design. Generated apps may edit markup, classes, and text so the payment
+surface matches the app, but the payment lifecycle must stay inside SDK
 components. Custom layouts can use its render prop or `EazoPaymentLifecycle`.
 
 The SDK lifecycle owns:
@@ -93,7 +95,9 @@ code.
 
 ### `SubscriptionManagementPanel.tsx`
 
-This panel wraps `EazoSubscriptionManagementPanel`.
+This panel wraps `EazoSubscriptionManagementPanel`. Its default layout is a
+reference implementation; apps should adjust the surrounding copy, spacing,
+classes, and visual treatment to fit their own settings/profile UI.
 
 It owns:
 
@@ -187,7 +191,7 @@ npm run typecheck
 ## What Agents May Customize
 
 - product names and prices in `catalog.ts`
-- visual markup, class names, and copy in payment wrapper components
+- visual markup, class names, and copy in payment wrapper components; restyle them to match the app
 - placement of `PaymentUnlockPanel`, `PremiumEntitlementGate`, and `SubscriptionManagementPanel`
 - surrounding page layout and styling
 

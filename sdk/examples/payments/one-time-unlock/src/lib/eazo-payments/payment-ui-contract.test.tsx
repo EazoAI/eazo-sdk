@@ -15,8 +15,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@eazo/sdk/payments/react", () => ({
   EazoPaymentUnlockPanel: ({
-    title = "Premium unlock",
-    ctaLabel = "Unlock premium"
+    title = "Paid access",
+    ctaLabel = "Continue to payment"
   }: {
     title?: React.ReactNode;
     ctaLabel?: React.ReactNode;
@@ -66,8 +66,8 @@ describe("Eazo payment UI contract", () => {
   it("uses the SDK lifecycle panel for checkout UI", () => {
     render(<PaymentUnlockPanel />);
 
-    expect(screen.getByText("Premium unlock")).toBeTruthy();
-    screen.getByRole("button", { name: "Unlock premium" }).click();
+    expect(screen.getByText("Paid access")).toBeTruthy();
+    screen.getByRole("button", { name: "Continue to payment" }).click();
     expect(mocks.checkout).toHaveBeenCalledTimes(1);
   });
 
