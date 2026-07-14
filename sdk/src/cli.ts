@@ -217,6 +217,7 @@ import {
   EAZO_PAYMENT_CURRENCY,
   EAZO_PAYMENT_MODE,
   defineEazoPaymentProducts,
+  getEazoPaymentPriceLimits,
 } from "@eazo/sdk/payments";
 import {
   createEazoCancelSubscriptionRoute,
@@ -306,6 +307,37 @@ describe("Eazo Payments integration contract", () => {
     expect([EAZO_PAYMENT_MODE.ONE_TIME, EAZO_PAYMENT_MODE.SUBSCRIPTION]).toContain(TEST_PRODUCT.mode);
     expect(TEST_PRODUCT.currency).toBe(EAZO_PAYMENT_CURRENCY.USD);
     expect(TEST_PRODUCT.entitlementKey).toBe(TEST_PRODUCT.key);
+  });
+
+  it("keeps the catalog price inside the SDK legal range", () => {
+    const limits = getEazoPaymentPriceLimits(TEST_PRODUCT.currency);
+    expect(TEST_PRODUCT.unitAmount).toBeGreaterThanOrEqual(limits.minimumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount).toBeLessThanOrEqual(limits.maximumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount % limits.unitAmountMultiple).toBe(0);
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        below_minimum: {
+          key: "below_minimum",
+          name: "Below minimum",
+          unitAmount: limits.minimumUnitAmount - 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode,
+        },
+      } as const),
+    ).toThrow("must be at least");
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        above_maximum: {
+          key: "above_maximum",
+          name: "Above maximum",
+          unitAmount: limits.maximumUnitAmount + 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode,
+        },
+      } as const),
+    ).toThrow("must not exceed");
   });
 
   it("rejects invalid product keys and modes", () => {

@@ -6,10 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { scaffoldPayments } from "../cli";
 import {
+  assertEazoPaymentUnitAmount,
   defineEazoPaymentProducts,
   EAZO_PAYMENT_CURRENCY,
+  EAZO_PAYMENT_DEFAULT_STRIPE_MAXIMUM_UNIT_AMOUNT,
+  EAZO_PAYMENT_MAXIMUM_UNIT_AMOUNT_BY_CURRENCY,
+  EAZO_PAYMENT_MAXIMUM_USD,
   EAZO_PAYMENT_MODE,
+  EAZO_PAYMENT_STRIPE_MAXIMUM_UNIT_AMOUNT_EXCEPTIONS,
   clearRememberedEazoPaymentId,
+  getEazoPaymentPriceLimits,
   normalizeEazoCheckoutResult,
   readEazoPaymentIdFromUrl,
   readRememberedEazoPaymentId,
@@ -247,6 +253,101 @@ describe("Eazo Payments SDK", () => {
     assertEazoCheckoutRequestContract(request);
     expect(request.currency).toBe(EAZO_PAYMENT_CURRENCY.CNY);
     expect(request.unit_amount).toBe(1999);
+  });
+
+  it.each([
+    [EAZO_PAYMENT_CURRENCY.USD, 50],
+    [EAZO_PAYMENT_CURRENCY.GBP, 30],
+    [EAZO_PAYMENT_CURRENCY.JPY, 50],
+    [EAZO_PAYMENT_CURRENCY.MXN, 1_000],
+    [EAZO_PAYMENT_CURRENCY.CNY, 500],
+  ] as const)("enforces the configured minimum for %s", (currency, minimumUnitAmount) => {
+    expect(getEazoPaymentPriceLimits(currency)).toMatchObject({
+      minimumUnitAmount,
+      hasConfiguredMinimum: true,
+    });
+    expect(() => assertEazoPaymentUnitAmount(minimumUnitAmount - 1, currency)).toThrow(
+      `must be at least ${minimumUnitAmount}`,
+    );
+    expect(() => assertEazoPaymentUnitAmount(minimumUnitAmount, currency)).not.toThrow();
+  });
+
+  it("uses a positive-minor-unit fallback when Stripe has no static settlement minimum", () => {
+    expect(getEazoPaymentPriceLimits(EAZO_PAYMENT_CURRENCY.AFN)).toEqual({
+      minimumUnitAmount: 1,
+      maximumUnitAmount: EAZO_PAYMENT_MAXIMUM_UNIT_AMOUNT_BY_CURRENCY.afn,
+      unitAmountMultiple: 1,
+      hasConfiguredMinimum: false,
+    });
+    expect(() => assertEazoPaymentUnitAmount(0, EAZO_PAYMENT_CURRENCY.AFN)).toThrow(
+      "must be at least 1",
+    );
+  });
+
+  it("sets the CNY range from ¥5 through the rounded-up USD 700 equivalent", () => {
+    expect(EAZO_PAYMENT_MAXIMUM_USD).toBe(700);
+    expect(getEazoPaymentPriceLimits(EAZO_PAYMENT_CURRENCY.CNY)).toMatchObject({
+      minimumUnitAmount: 500,
+      maximumUnitAmount: 475_200,
+      unitAmountMultiple: 1,
+    });
+  });
+
+  it("defines a USD 700-equivalent-or-lower maximum for every SDK currency", () => {
+    for (const currency of Object.values(EAZO_PAYMENT_CURRENCY)) {
+      const limits = getEazoPaymentPriceLimits(currency);
+      const stripeMaximum =
+        EAZO_PAYMENT_STRIPE_MAXIMUM_UNIT_AMOUNT_EXCEPTIONS[
+          currency as keyof typeof EAZO_PAYMENT_STRIPE_MAXIMUM_UNIT_AMOUNT_EXCEPTIONS
+        ] ?? EAZO_PAYMENT_DEFAULT_STRIPE_MAXIMUM_UNIT_AMOUNT;
+      expect(limits.maximumUnitAmount).toBe(EAZO_PAYMENT_MAXIMUM_UNIT_AMOUNT_BY_CURRENCY[currency]);
+      expect(limits.maximumUnitAmount).toBeGreaterThanOrEqual(limits.minimumUnitAmount);
+      expect(limits.maximumUnitAmount).toBeLessThanOrEqual(stripeMaximum);
+      expect(() => assertEazoPaymentUnitAmount(limits.maximumUnitAmount, currency)).not.toThrow();
+    }
+  });
+
+  it("caps converted limits at Stripe's currency technical maximum", () => {
+    expect(getEazoPaymentPriceLimits(EAZO_PAYMENT_CURRENCY.LAK).maximumUnitAmount).toBe(
+      EAZO_PAYMENT_DEFAULT_STRIPE_MAXIMUM_UNIT_AMOUNT,
+    );
+    expect(getEazoPaymentPriceLimits(EAZO_PAYMENT_CURRENCY.LBP).maximumUnitAmount).toBe(
+      6_265_000_000,
+    );
+  });
+
+  it("enforces the per-currency SDK maximum and Stripe special amount increments", () => {
+    const usdMaximum = EAZO_PAYMENT_MAXIMUM_UNIT_AMOUNT_BY_CURRENCY.usd;
+    expect(() =>
+      assertEazoPaymentUnitAmount(
+        usdMaximum + 1,
+        EAZO_PAYMENT_CURRENCY.USD,
+      ),
+    ).toThrow(`must not exceed ${usdMaximum}`);
+    expect(() => assertEazoPaymentUnitAmount(550, EAZO_PAYMENT_CURRENCY.ISK)).toThrow(
+      "must be a multiple of 100",
+    );
+    expect(getEazoPaymentPriceLimits(EAZO_PAYMENT_CURRENCY.UGX)).toMatchObject({
+      minimumUnitAmount: 100,
+      maximumUnitAmount: 99_999_900,
+      unitAmountMultiple: 100,
+    });
+    expect(() => assertEazoPaymentUnitAmount(500, EAZO_PAYMENT_CURRENCY.ISK)).not.toThrow();
+  });
+
+  it("rejects checkout totals above the legal SDK range", () => {
+    const usdMaximum = EAZO_PAYMENT_MAXIMUM_UNIT_AMOUNT_BY_CURRENCY.usd;
+    expect(() =>
+      buildEazoCheckoutRequest({
+        productKey: "premium",
+        productName: "Premium unlock",
+        unitAmount: usdMaximum,
+        currency: EAZO_PAYMENT_CURRENCY.USD,
+        quantity: 2,
+        successUrl: "https://app.example.com/payment/success",
+        cancelUrl: "https://app.example.com/payment/cancel",
+      }),
+    ).toThrow(`checkout total for USD must not exceed ${usdMaximum}`);
   });
 
   it("rejects invalid product catalog values before checkout", () => {
@@ -1153,6 +1254,14 @@ describe("Eazo Payments SDK", () => {
       path.join(cwd, "src/lib/eazo-payments/payment-ui-contract.test.tsx"),
       "utf8",
     );
+    const contractTest = fs.readFileSync(
+      path.join(cwd, "src/lib/eazo-payments/payment-contract.test.ts"),
+      "utf8",
+    );
+    expect(contractTest).toContain("getEazoPaymentPriceLimits");
+    expect(contractTest).toContain("maximumUnitAmount");
+    expect(contractTest).toContain("below_minimum");
+    expect(contractTest).toContain("above_maximum");
     assertNoLegacyPaymentFlowSource(uiTest, "payment-ui-contract.test.tsx");
   });
 
@@ -1215,6 +1324,13 @@ describe("Eazo Payments SDK", () => {
     expect(catalog).toContain("defineEazoPaymentProducts");
     expect(catalog).toContain("EAZO_PAYMENT_MODE.ONE_TIME");
     expect(catalog).toContain("EAZO_PAYMENT_CURRENCY.USD");
+    const contractTest = fs.readFileSync(
+      path.join(exampleDir, "src/lib/eazo-payments/payment-contract.test.ts"),
+      "utf8",
+    );
+    expect(contractTest).toContain("getEazoPaymentPriceLimits");
+    expect(contractTest).toContain("below_minimum");
+    expect(contractTest).toContain("above_maximum");
 
     const homePage = fs.readFileSync(path.join(exampleDir, "src/app/page.tsx"), "utf8");
     expect(homePage).toContain("PaymentUnlockPanel");
@@ -1258,6 +1374,10 @@ describe("Eazo Payments SDK", () => {
       path.join(exampleDir, "src/components/eazo-payments/SubscriptionManagementPanel.tsx"),
       "utf8",
     );
+    const contractTest = fs.readFileSync(
+      path.join(exampleDir, "src/lib/eazo-payments/payment-contract.test.ts"),
+      "utf8",
+    );
 
     expect(homePage).toContain("Paid access");
     expect(homePage).toContain("Access active");
@@ -1265,6 +1385,9 @@ describe("Eazo Payments SDK", () => {
     expect(homePage).toContain("working subscription reference");
     expect(panel).toContain("EazoPaymentUnlockPanel");
     expect(managementPanel).toContain("EazoSubscriptionManagementPanel");
+    expect(contractTest).toContain("getEazoPaymentPriceLimits");
+    expect(contractTest).toContain("below_minimum");
+    expect(contractTest).toContain("above_maximum");
     assertNoLegacyPaymentFlowSource(homePage, "monthly-subscription/src/app/page.tsx");
   });
 

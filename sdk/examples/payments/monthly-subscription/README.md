@@ -70,7 +70,11 @@ Rules:
 - The scaffold defaults to USD, but generated apps should use the currency the creator confirmed for the product.
 - `mode` uses SDK constants, not raw strings.
 - Do not add `interval`; this recipe is always monthly.
-- `defineEazoPaymentProducts(...)` validates keys, modes, currency, and price shape.
+- `defineEazoPaymentProducts(...)` validates keys, modes, currency, and the legal price range.
+- Use `getEazoPaymentPriceLimits(currency)` when product UI or tests need the SDK minimum, maximum, or amount increment. For example, USD must be at least `50` ($0.50), CNY at least `500` (¥5), GBP at least `30` (£0.30), and JPY at least `50` (¥50).
+- Eazo caps product prices at USD $700 or its snapshot-based, whole-major-unit, rounded-up equivalent. If Stripe's technical maximum for a currency is lower, the SDK uses that lower limit. For example USD is `70_000` ($700) and CNY is `475_200` (¥4,752) using the 2026-07-14 rate snapshot.
+- JPY and other zero-decimal currencies use whole currency units. ISK and UGX amounts must be divisible by `100` because of Stripe's API representation rules.
+- Stripe minimums are based on the platform settlement currency. For a currency without a published static minimum, the SDK enforces a positive minor-unit amount and Eazo/Stripe performs the final conversion-aware validation during checkout.
 
 ### `PaymentUnlockPanel.tsx`
 

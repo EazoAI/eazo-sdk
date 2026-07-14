@@ -2,8 +2,10 @@ import {
   assertEazoPaymentCurrency,
   assertEazoPaymentMode,
   assertEazoPaymentProductKey,
+  assertEazoPaymentUnitAmount,
   EAZO_PAYMENT_MODE,
   EazoPaymentApiError,
+  getEazoPaymentPriceLimits,
   normalizeEazoCheckoutResult,
   type EazoAppSubscription,
   type EazoAppSubscriptionsResponse,
@@ -72,11 +74,16 @@ export function buildEazoCheckoutRequest(
   assertEazoPaymentProductKey(entitlementKey, "entitlement key");
   assertEazoPaymentMode(mode);
   assertEazoPaymentCurrency(input.currency);
-  if (!Number.isInteger(input.unitAmount) || input.unitAmount <= 0) {
-    throw new Error("unitAmount must be a positive integer in minor currency units");
-  }
+  assertEazoPaymentUnitAmount(input.unitAmount, input.currency);
   if (input.quantity !== undefined && (!Number.isInteger(input.quantity) || input.quantity <= 0)) {
     throw new Error("quantity must be a positive integer");
+  }
+  const quantity = input.quantity || 1;
+  const maximumUnitAmount = getEazoPaymentPriceLimits(input.currency).maximumUnitAmount;
+  if (input.unitAmount * quantity > maximumUnitAmount) {
+    throw new Error(
+      `checkout total for ${input.currency.toUpperCase()} must not exceed ${maximumUnitAmount} in minor currency units`,
+    );
   }
   if (!input.productName || typeof input.productName !== "string") {
     throw new Error("productName is required");
@@ -93,7 +100,7 @@ export function buildEazoCheckoutRequest(
     product_name: input.productName,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-    quantity: input.quantity || 1,
+    quantity,
     metadata: {
       product_key: productKey,
       entitlement_key: entitlementKey,

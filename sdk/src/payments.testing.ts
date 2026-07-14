@@ -10,7 +10,11 @@ import type {
   EazoPaymentStatus,
   EazoPaymentStatusValue,
 } from "./payments";
-import { EAZO_PAYMENT_CURRENCY } from "./payments";
+import {
+  assertEazoPaymentUnitAmount,
+  EAZO_PAYMENT_CURRENCY,
+  getEazoPaymentPriceLimits,
+} from "./payments";
 
 export function mockEazoCheckoutResponse(
   overrides: Partial<EazoCheckoutSessionResponse> = {},
@@ -201,10 +205,17 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
   assertString(body.entitlement_key, "entitlement_key");
   assertNumber(body.unit_amount, "unit_amount");
   assertCurrency(body.currency, "currency");
+  assertEazoPaymentUnitAmount(body.unit_amount, body.currency, "unit_amount");
   assertString(body.product_name, "product_name");
   assertString(body.success_url, "success_url");
   assertString(body.cancel_url, "cancel_url");
   assertNumber(body.quantity, "quantity");
+  const maximumUnitAmount = getEazoPaymentPriceLimits(body.currency).maximumUnitAmount;
+  if ((body.unit_amount as number) * (body.quantity as number) > maximumUnitAmount) {
+    throw new Error(
+      `checkout total for ${body.currency.toUpperCase()} must not exceed ${maximumUnitAmount} in minor currency units`,
+    );
+  }
   assertMetadata(body.metadata, "metadata");
   assertString(body.idempotency_key, "idempotency_key");
   for (const forbidden of ["amount", "title", "product_id", "checkout_url", "order_id", "interval"]) {
