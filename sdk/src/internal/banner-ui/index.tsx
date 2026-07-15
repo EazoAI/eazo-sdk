@@ -37,11 +37,6 @@ const MOBILE_BREAKPOINT_PX = 480;
 // remix the app in the browser. The primary handoff CTAs keep their
 // default store / marketing fallback.
 const REMIX_FALLBACK_URL = "https://creator.eazo.ai/";
-// The center handoff modal pops immediately on load. After the user
-// dismisses it (X / ESC), it re-arms and pops again this long later —
-// repeating for each dismiss. The top banner stays visible throughout;
-// this only paces the center "Open in Eazo app" modal.
-const MODAL_REOPEN_DELAY_MS = 30_000;
 
 function isMobile(): boolean {
   if (typeof window === "undefined") return false;
@@ -118,15 +113,12 @@ export function EazoBrandBanner(): React.ReactElement | null {
   // is already in hand — no fetch is going to fire.
   const [loading, setLoading] = React.useState(() => getInitialAppInfo() === null);
   const [mobile, setMobile] = React.useState(false);
-  // Visibility of the strong-CTA modal. Opens immediately on load;
-  // dismissing (X / ESC) hides it and arms a timer to re-open it
-  // MODAL_REOPEN_DELAY_MS later, repeating for each dismiss. Intentionally
-  // NOT persisted — every page load re-engages the modal. The top banner
+  // Visibility of the strong-CTA modal. Opens immediately on load and
+  // shows once — dismissing (X / ESC) closes it for the rest of this page
+  // load, with no re-open. Intentionally NOT persisted: a fresh page load
+  // (navigation, refresh, new tab) engages the modal again. The top banner
   // stays visible regardless.
   const [modalOpen, setModalOpen] = React.useState(true);
-  // Holds the pending re-open timer so a fresh dismiss can reset it and
-  // unmount can clear it (no leaked timer re-rendering a stale Provider).
-  const reopenTimerRef = React.useRef<number | null>(null);
   // Resolved on mount in the browser. Encoded by the QR so a desktop
   // scan opens the EXACT page on a phone (which then sends the user
   // through the same handoff via the mobile route).
@@ -141,29 +133,9 @@ export function EazoBrandBanner(): React.ReactElement | null {
     setMounted(true);
   }, []);
 
-  // Hide the modal and arm a timer to bring it back MODAL_REOPEN_DELAY_MS
-  // later. A new dismiss resets any pending timer so the delay is always
-  // measured from the most recent close.
+  // Close the modal for the rest of this page load — no re-open.
   const dismissModal = React.useCallback(() => {
     setModalOpen(false);
-    if (reopenTimerRef.current !== null) {
-      window.clearTimeout(reopenTimerRef.current);
-    }
-    reopenTimerRef.current = window.setTimeout(() => {
-      reopenTimerRef.current = null;
-      setModalOpen(true);
-    }, MODAL_REOPEN_DELAY_MS);
-  }, []);
-
-  // Clear any pending re-open timer on unmount so a quick navigation
-  // doesn't leak a timer that re-renders the (now stale) Provider.
-  React.useEffect(() => {
-    return () => {
-      if (reopenTimerRef.current !== null) {
-        window.clearTimeout(reopenTimerRef.current);
-        reopenTimerRef.current = null;
-      }
-    };
   }, []);
 
   // ESC closes the modal — same dismiss path as the X button. Only
