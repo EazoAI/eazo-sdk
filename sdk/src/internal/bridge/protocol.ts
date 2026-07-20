@@ -17,6 +17,7 @@ export const MEMORY_REPORT_ACTION = "memory.reportAction";
 export const NOTIFICATIONS_SUBSCRIBE = "notifications.subscribe";
 export const NOTIFICATIONS_UNSUBSCRIBE = "notifications.unsubscribe";
 export const NOTIFICATIONS_IS_SUBSCRIBED = "notifications.isSubscribed";
+export const NOTIFICATIONS_SYNC_SCHEDULES = "notifications.syncSchedules";
 
 export type ErrorCode =
   | "NOT_SUPPORTED"

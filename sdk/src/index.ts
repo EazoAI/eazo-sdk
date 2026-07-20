@@ -21,7 +21,14 @@ export type {
   ShareComposeResult,
   ShareImageAttachment,
 } from "./internal/capabilities/share";
-export type { NotificationsSubscriptionResult } from "./internal/capabilities/notifications";
+export type {
+  NotificationsSubscriptionResult,
+  NotificationSchedule,
+  NotificationTimeSchedule,
+  NotificationIntervalSchedule,
+  NotificationScheduleSyncInput,
+  NotificationScheduleSyncResult,
+} from "./internal/capabilities/notifications";
 export type {
   PublicAppData,
   PublicAppInfo,
