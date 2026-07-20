@@ -291,6 +291,6 @@ App code never branches on environment — the capability API is the same on bot
 | Variable | Required | Used by |
 |---|---|---|
 | `EAZO_APP_ID` | yes | App ID; auto-resolved by `<EazoProvider>`. |
+| `EAZO_API_BASE` | yes | Eazo platform base; payment server helpers derive the Creator `/creator` base from it. |
 | `EAZO_PLATFORM_API_BASE` | optional | Override the Eazo platform base URL (defaults to `https://eazo.ai`). |
-| `EAZO_PAYMENTS_API_BASE` | payments | Eazo Creator API base for generated app payment routes. |
 | `EAZO_PRIVATE_KEY` | server | `requireAuth`, `notifications.publish`, payment checkout/status routes |

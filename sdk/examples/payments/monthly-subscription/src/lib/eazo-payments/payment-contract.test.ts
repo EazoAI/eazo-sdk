@@ -52,7 +52,7 @@ function mockPlatformResponse(status: number, body: unknown) {
 
 describe("Eazo Payments integration contract", () => {
   beforeEach(() => {
-    process.env.EAZO_PAYMENTS_API_BASE = "https://dev1.eazo.ai/creator";
+    process.env.EAZO_API_BASE = "https://dev1.eazo.ai";
     process.env.EAZO_APP_ID = "app_test";
     process.env.EAZO_PRIVATE_KEY = "eazo_private_test";
   });

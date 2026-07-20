@@ -26,6 +26,7 @@ import {
   buildEazoCheckoutRequest,
   cancelEazoSubscription,
   createEazoCheckoutSession,
+  deriveEazoCreatorApiBase,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
   listEazoSubscriptions,
@@ -142,7 +143,7 @@ describe("Eazo Payments SDK", () => {
   beforeEach(() => {
     __resetSDK();
     removeMobileHost();
-    process.env.EAZO_PAYMENTS_API_BASE = "https://dev1.eazo.ai/creator";
+    process.env.EAZO_API_BASE = "https://dev1.eazo.ai";
     process.env.EAZO_APP_ID = "app_test";
     process.env.EAZO_PRIVATE_KEY = "eazo_private_test";
     window.sessionStorage.clear();
@@ -192,12 +193,21 @@ describe("Eazo Payments SDK", () => {
     assertEazoCheckoutRequestContract(request);
   });
 
-  it("requires the dedicated Creator payments API base", () => {
-    delete process.env.EAZO_PAYMENTS_API_BASE;
-    process.env.EAZO_API_BASE = "https://dev1.eazo.ai";
-    process.env.EAZO_PLATFORM_API_BASE = "https://dev1.eazo.ai";
+  it("derives the Creator API base from EAZO_API_BASE", () => {
+    expect(deriveEazoCreatorApiBase("https://dev1.eazo.ai")).toBe(
+      "https://dev1.eazo.ai/creator",
+    );
+    expect(deriveEazoCreatorApiBase("https://dev1.eazo.ai/creator/")).toBe(
+      "https://dev1.eazo.ai/creator",
+    );
+    expect(deriveEazoCreatorApiBase("https://creator.dev1.eazo.ai/")).toBe(
+      "https://creator.dev1.eazo.ai",
+    );
+  });
 
-    expect(() => requireEazoPaymentEnv()).toThrow("Missing EAZO_PAYMENTS_API_BASE");
+  it("requires EAZO_API_BASE for payment server helpers", () => {
+    delete process.env.EAZO_API_BASE;
+    expect(() => requireEazoPaymentEnv()).toThrow("Missing EAZO_API_BASE");
   });
 
   it("builds subscription checkout DTO without exposing interval", () => {

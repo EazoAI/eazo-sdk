@@ -33,17 +33,42 @@ function readEnvByNames(names: readonly string[]): string | null {
   return null;
 }
 
+export function deriveEazoCreatorApiBase(apiBase: string): string {
+  let url: URL;
+  try {
+    url = new URL(apiBase);
+  } catch {
+    throw new Error("Invalid EAZO_API_BASE");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Invalid EAZO_API_BASE");
+  }
+
+  url.search = "";
+  url.hash = "";
+  const path = url.pathname.replace(/\/+$/, "");
+  const usesCreatorSubdomain = url.hostname.toLowerCase().startsWith("creator.");
+  const alreadyUsesCreatorPath = path === "/creator" || path.endsWith("/creator");
+
+  if (!usesCreatorSubdomain && !alreadyUsesCreatorPath) {
+    url.pathname = `${path}/creator`;
+  } else {
+    url.pathname = path || "/";
+  }
+  return url.toString().replace(/\/$/, "");
+}
+
 export function requireEazoPaymentEnv(): EazoPaymentEnv {
-  const apiBase = readEnvByNames(["EAZO_PAYMENTS_API_BASE"]);
+  const platformApiBase = readEnvByNames(["EAZO_API_BASE"]);
   const appId = readEnvByNames(["EAZO_APP_ID"]);
   const privateKey = readEnvByNames(["EAZO_PRIVATE_KEY"]);
 
-  if (!apiBase) throw new Error("Missing EAZO_PAYMENTS_API_BASE");
+  if (!platformApiBase) throw new Error("Missing EAZO_API_BASE");
   if (!appId) throw new Error("Missing EAZO_APP_ID");
   if (!privateKey) throw new Error("Missing EAZO_PRIVATE_KEY");
 
   return {
-    apiBase: apiBase.replace(/\/$/, ""),
+    apiBase: deriveEazoCreatorApiBase(platformApiBase),
     appId,
     privateKey,
   };

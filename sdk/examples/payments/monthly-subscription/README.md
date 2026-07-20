@@ -126,9 +126,10 @@ export const POST = createEazoCancelSubscriptionRoute();
 export const POST = createEazoResumeSubscriptionRoute();
 ```
 
-These helpers read `EAZO_PAYMENTS_API_BASE`, `EAZO_APP_ID`, and `EAZO_PRIVATE_KEY` on
-the server. They also translate local app requests into the platform payment
-contract without exposing platform DTOs to UI code.
+These helpers read `EAZO_API_BASE`, `EAZO_APP_ID`, and `EAZO_PRIVATE_KEY` on the
+server. The SDK derives the Creator API base from `EAZO_API_BASE` and translates
+local app requests into the platform payment contract without exposing platform
+DTOs to UI code.
 
 Generated app UI should call payment behavior only through SDK lifecycle
 components and hooks.
@@ -179,7 +180,7 @@ npm install
 Copy `.env.example` to `.env.local` and provide the generated app values:
 
 ```text
-EAZO_PAYMENTS_API_BASE=https://dev1.eazo.ai/creator
+EAZO_API_BASE=https://dev1.eazo.ai
 EAZO_APP_ID=<generated-app-id>
 EAZO_PRIVATE_KEY=<generated-app-private-key>
 ```
