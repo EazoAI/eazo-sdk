@@ -34,11 +34,11 @@ function readEnvByNames(names: readonly string[]): string | null {
 }
 
 export function requireEazoPaymentEnv(): EazoPaymentEnv {
-  const apiBase = readEnvByNames(["EAZO_API_BASE", "EAZO_PLATFORM_API_BASE"]);
+  const apiBase = readEnvByNames(["EAZO_PAYMENTS_API_BASE"]);
   const appId = readEnvByNames(["EAZO_APP_ID"]);
   const privateKey = readEnvByNames(["EAZO_PRIVATE_KEY"]);
 
-  if (!apiBase) throw new Error("Missing EAZO_API_BASE");
+  if (!apiBase) throw new Error("Missing EAZO_PAYMENTS_API_BASE");
   if (!appId) throw new Error("Missing EAZO_APP_ID");
   if (!privateKey) throw new Error("Missing EAZO_PRIVATE_KEY");
 

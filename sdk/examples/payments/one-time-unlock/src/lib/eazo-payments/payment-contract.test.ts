@@ -45,7 +45,7 @@ function mockPlatformResponse(status: number, body: unknown) {
 
 describe("Eazo Payments integration contract", () => {
   beforeEach(() => {
-    process.env.EAZO_API_BASE = "https://dev1.eazo.ai";
+    process.env.EAZO_PAYMENTS_API_BASE = "https://dev1.eazo.ai/creator";
     process.env.EAZO_APP_ID = "app_test";
     process.env.EAZO_PRIVATE_KEY = "eazo_private_test";
   });
@@ -175,7 +175,7 @@ describe("Eazo Payments integration contract", () => {
       paymentId: "cap_test_eazo"
     });
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/checkout-sessions",
+      "https://dev1.eazo.ai/creator/api/open/payments/checkout-sessions",
       expect.objectContaining({
         method: "POST",
         headers: {
@@ -241,7 +241,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.paid).toBe(status === "succeeded");
       expect(fetch).toHaveBeenCalledWith(
-        "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test",
+        "https://dev1.eazo.ai/creator/api/open/payments/cap_test_eazo/status?app_id=app_test",
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store"
@@ -263,7 +263,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.active).toBe(status === "active");
       expect(fetch).toHaveBeenCalledWith(
-        `https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=${TEST_PRODUCT.key}&app_user_id=app_user_test`,
+        `https://dev1.eazo.ai/creator/api/open/payments/entitlements?app_id=app_test&product_key=${TEST_PRODUCT.key}&app_user_id=app_user_test`,
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store"
