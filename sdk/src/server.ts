@@ -133,6 +133,17 @@ function getDeveloperAppId(): string {
   return fromEnv;
 }
 
+/**
+ * Recipient set for a publish. `"subscribers"` (default) broadcasts to every
+ * user with this app's subscribe bit; `{ userIds }` targets specific users
+ * (1–500 ids per call). Targeted lists are intersected with the subscriber
+ * set on the platform — nominating a user never overrides their opt-in, and
+ * ids that aren't subscribed are silently dropped (reflected in `delivered`).
+ */
+export type NotificationPublishAudience =
+  | "subscribers"
+  | { userIds: string[] };
+
 export interface NotificationPublishInput {
   /** Title shown in the system push tray. Up to 120 chars. */
   title: string;
@@ -140,8 +151,15 @@ export interface NotificationPublishInput {
   body: string;
   /** Optional structured payload merged into the device-side `data`. */
   data?: Record<string, unknown>;
-  /** v1 only supports `subscribers`; future values may include explicit user lists. */
-  audience?: "subscribers";
+  /** Defaults to `"subscribers"` (broadcast). See {@link NotificationPublishAudience}. */
+  audience?: NotificationPublishAudience;
+  /**
+   * Optional idempotency key (letters, digits, `:_-.`, up to 120 chars).
+   * Re-publishing with the same key — e.g. a re-run cron — inserts nothing
+   * for recipients already notified under it. Scope it to the logical send,
+   * like `daily-digest:2026-07-21`.
+   */
+  dedupeKey?: string;
 }
 
 export interface NotificationPublishResult {
@@ -161,6 +179,19 @@ export const notifications = {
     }
     if (!input.title) throw new Error("notifications.publish: `title` is required");
     if (!input.body) throw new Error("notifications.publish: `body` is required");
+    if (input.audience !== undefined && input.audience !== "subscribers") {
+      const userIds = (input.audience as { userIds?: unknown })?.userIds;
+      if (
+        !Array.isArray(userIds) ||
+        userIds.length === 0 ||
+        userIds.length > 500 ||
+        !userIds.every((id) => typeof id === "string" && id.trim().length > 0)
+      ) {
+        throw new Error(
+          "notifications.publish: `audience` must be \"subscribers\" or { userIds: string[] } with 1-500 non-empty ids",
+        );
+      }
+    }
     const appId = getDeveloperAppId();
 
     const privateKeyHex = getDeveloperPrivateKey();
@@ -187,6 +218,7 @@ export const notifications = {
         body: input.body,
         data: input.data,
         audience: input.audience ?? "subscribers",
+        ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
       }),
     });
 
