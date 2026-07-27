@@ -11,6 +11,7 @@ export const AUTH_REQUEST_LOGIN = "auth.requestLogin";
 export const AUTH_REQUEST_LOGOUT = "auth.requestLogout";
 export const AUTH_CHANGED_EVENT = "auth.changed";
 export const AUTH_LOGIN_CANCELLED_EVENT = "auth.loginCancelled";
+export const DEVICE_CHANGED_EVENT = "device.changed";
 export const SHARE_COMPOSE = "share.compose";
 export const MEMORY_REPORT_ACTION = "memory.reportAction";
 export const NOTIFICATIONS_SUBSCRIBE = "notifications.subscribe";

@@ -1,5 +1,6 @@
 import type { DeviceContext } from "../../types";
-import { waitForBootstrap } from "../bootstrap";
+import { getBridge, waitForBootstrap } from "../bootstrap";
+import { DEVICE_CHANGED_EVENT } from "../bridge/protocol";
 import { setHostApiBase } from "../config";
 import { setDevice, store } from "../store";
 
@@ -30,6 +31,15 @@ function ensureBootstrap(): Promise<void> {
     if (!hello) return;
     setHostApiBase(hello.apiBase ?? null);
     setDevice(hello.device);
+
+    // Host may push runtime device changes (e.g. the Creator switching the
+    // preview language). Merge the patch into the store so `useEazo(s =>
+    // s.device.*)` consumers re-render without an app reload.
+    const bridge = getBridge();
+    bridge?.on(DEVICE_CHANGED_EVENT, (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      setDevice(payload as Partial<DeviceContext>);
+    });
   })();
   return bootstrapPromise;
 }
