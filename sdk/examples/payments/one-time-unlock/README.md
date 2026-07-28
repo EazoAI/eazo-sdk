@@ -57,15 +57,23 @@ Rules:
 
 - `key` is a stable ledger identifier used in payment metadata and entitlement lookups.
 - `entitlementKey` defaults to `key`; only set it manually when multiple products unlock the same entitlement.
-- `unitAmount` is cents.
-- `mode` and `currency` use SDK constants, not raw strings.
-- `defineEazoPaymentProducts(...)` validates keys, modes, currency, and price shape.
+- `unitAmount` is the integer amount in minor currency units, such as cents for USD or fen for CNY.
+- `currency` is required. Use an SDK enum value such as `EAZO_PAYMENT_CURRENCY.USD` or `EAZO_PAYMENT_CURRENCY.CNY`, not a raw string.
+- The scaffold defaults to USD, but generated apps should use the currency the creator confirmed for the product.
+- `mode` uses SDK constants, not raw strings.
+- `defineEazoPaymentProducts(...)` validates keys, modes, currency, and the legal price range.
+- Use `getEazoPaymentPriceLimits(currency)` when product UI or tests need the SDK minimum, maximum, or amount increment. For example, USD must be at least `50` ($0.50), CNY at least `500` (¥5), GBP at least `30` (£0.30), and JPY at least `50` (¥50).
+- Eazo caps product prices at USD $700 or its snapshot-based, whole-major-unit, rounded-up equivalent. If Stripe's technical maximum for a currency is lower, the SDK uses that lower limit. For example USD is `70_000` ($700) and CNY is `475_200` (¥4,752) using the 2026-07-14 rate snapshot.
+- JPY and other zero-decimal currencies use whole currency units. ISK and UGX amounts must be divisible by `100` because of Stripe's API representation rules.
+- Stripe minimums are based on the platform settlement currency. For a currency without a published static minimum, the SDK enforces a positive minor-unit amount and Eazo/Stripe performs the final conversion-aware validation during checkout.
 
 ### `PaymentUnlockPanel.tsx`
 
-This is the reusable UI shell. Generated apps may edit markup, classes, and
-text, but the payment lifecycle must stay inside SDK components. The scaffolded
-panel wraps `EazoPaymentUnlockPanel`; custom layouts can use its render prop or
+This is the reusable UI shell. The default UI is intentionally plain and should
+be treated as a working reference, not the final visual design. Generated apps
+may edit markup, classes, and text so the payment surface matches the app, but
+the payment lifecycle must stay inside SDK components. The scaffolded panel
+wraps `EazoPaymentUnlockPanel`; custom layouts can use its render prop or
 `EazoPaymentLifecycle`.
 
 The SDK lifecycle owns:
@@ -77,7 +85,7 @@ The SDK lifecycle owns:
 - pending, active, failed, refunded, and disputed states
 - visible error state
 
-The default button calls only the SDK-owned checkout action:
+The default button calls only the SDK-owned checkout action.
 
 Do not replace it with `fetch("/api/payments/checkout")`, `data.url`,
 `window.open`, or Stripe SDK calls.
@@ -92,9 +100,9 @@ export const GET = createEazoPaymentStatusRoute();
 export const GET = createEazoEntitlementRoute();
 ```
 
-These helpers read `EAZO_API_BASE`, `EAZO_APP_ID`, and `EAZO_PRIVATE_KEY` on
-the server. They also translate local app requests into the platform payment
-contract:
+These helpers read `EAZO_API_BASE`, `EAZO_APP_ID`, and `EAZO_PRIVATE_KEY` on the
+server. The SDK derives the Creator API base from `EAZO_API_BASE` and translates
+local app requests into the platform payment contract:
 
 - `POST /api/payments/checkout`
 - `GET /api/payments/status?paymentId=...`
@@ -185,7 +193,7 @@ npm run typecheck
 ## What Agents May Customize
 
 - product names and prices in `catalog.ts`
-- visual markup, class names, and copy in `PaymentUnlockPanel.tsx`
+- visual markup, class names, and copy in `PaymentUnlockPanel.tsx`; restyle it to match the app
 - placement of `PaymentUnlockPanel` and `PremiumEntitlementGate`
 - surrounding page layout and styling
 

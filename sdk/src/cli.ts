@@ -17,6 +17,183 @@ type TemplateFile = {
 
 const DEFAULT_RECIPE = "one-time-unlock";
 const SUPPORTED_RECIPES = new Set(["one-time-unlock", "monthly-subscription"]);
+export const EAZO_PAYMENTS_MIN_SDK_VERSION = "0.22.3";
+export const EAZO_PAYMENTS_REQUIRED_EXPORTS = [
+  "./payments",
+  "./payments/react",
+  "./payments/server",
+  "./payments/next",
+  "./payments/next/client",
+  "./payments/testing",
+] as const;
+
+type PackageJson = {
+  version?: string;
+  exports?: Record<string, unknown>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+};
+
+export type PaymentsDoctorOptions = {
+  cwd?: string;
+  minimumVersion?: string;
+};
+
+export type PaymentsDoctorReport = {
+  ok: boolean;
+  cwd: string;
+  minimumVersion: string;
+  declaredSpec: string | null;
+  installedVersion: string | null;
+  lockfiles: string[];
+  missingExports: string[];
+  issues: string[];
+};
+
+type ParsedSemver = {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: boolean;
+};
+
+function readJsonFile(filePath: string): PackageJson | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as PackageJson;
+  } catch {
+    return null;
+  }
+}
+
+function parseSemver(value: string): ParsedSemver | null {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: Boolean(match[4]),
+  };
+}
+
+function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] !== right[key]) return left[key] - right[key];
+  }
+  if (left.prerelease === right.prerelease) return 0;
+  return left.prerelease ? -1 : 1;
+}
+
+function isVersionAtLeast(version: string, minimumVersion: string): boolean {
+  const parsedVersion = parseSemver(version);
+  const parsedMinimum = parseSemver(minimumVersion);
+  if (!parsedVersion || !parsedMinimum) return false;
+  return compareSemver(parsedVersion, parsedMinimum) >= 0;
+}
+
+function declaredSdkSpec(packageJson: PackageJson | null): string | null {
+  if (!packageJson) return null;
+  for (const dependencies of [
+    packageJson.dependencies,
+    packageJson.devDependencies,
+    packageJson.optionalDependencies,
+    packageJson.peerDependencies,
+  ]) {
+    const spec = dependencies?.["@eazo/sdk"]?.trim();
+    if (spec) return spec;
+  }
+  return null;
+}
+
+function declaredRegistryVersion(spec: string | null): string | null {
+  if (!spec || /^(?:https?:|file:|git(?:\+|:)|github:|workspace:|link:)/.test(spec)) {
+    return null;
+  }
+  const match = spec.match(/(?:^|[~^<>=\s])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/);
+  return match?.[1] ?? null;
+}
+
+export function inspectPaymentsInstallation(
+  options: PaymentsDoctorOptions = {},
+): PaymentsDoctorReport {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const minimumVersion = options.minimumVersion || EAZO_PAYMENTS_MIN_SDK_VERSION;
+  const projectPackage = readJsonFile(path.join(cwd, "package.json"));
+  const installedPackage = readJsonFile(
+    path.join(cwd, "node_modules", "@eazo", "sdk", "package.json"),
+  );
+  const declaredSpec = declaredSdkSpec(projectPackage);
+  const installedVersion = installedPackage?.version?.trim() || null;
+  const lockfiles = [
+    "bun.lock",
+    "bun.lockb",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+  ].filter((filename) => fs.existsSync(path.join(cwd, filename)));
+  const installedExports = new Set(Object.keys(installedPackage?.exports || {}));
+  const missingExports = EAZO_PAYMENTS_REQUIRED_EXPORTS.filter(
+    (exportPath) => !installedExports.has(exportPath),
+  );
+  const issues: string[] = [];
+
+  if (!projectPackage) {
+    issues.push("Missing or unreadable package.json.");
+  }
+  if (!declaredSpec) {
+    issues.push("package.json must declare @eazo/sdk.");
+  }
+  const declaredVersion = declaredRegistryVersion(declaredSpec);
+  if (declaredVersion && !isVersionAtLeast(declaredVersion, minimumVersion)) {
+    issues.push(
+      `package.json declares @eazo/sdk ${declaredSpec}, below the Payment SDK minimum ${minimumVersion}.`,
+    );
+  }
+  if (!installedPackage || !installedVersion) {
+    issues.push("Install @eazo/sdk before running the Payment SDK scaffold.");
+  } else if (!isVersionAtLeast(installedVersion, minimumVersion)) {
+    issues.push(
+      `Installed @eazo/sdk ${installedVersion} is below the Payment SDK minimum ${minimumVersion}.`,
+    );
+  }
+  if (missingExports.length > 0) {
+    issues.push(`Installed @eazo/sdk is missing exports: ${missingExports.join(", ")}.`);
+  }
+  if (lockfiles.length === 0) {
+    issues.push("No package-manager lockfile found; install dependencies and commit the lockfile.");
+  }
+
+  return {
+    ok: issues.length === 0,
+    cwd,
+    minimumVersion,
+    declaredSpec,
+    installedVersion,
+    lockfiles,
+    missingExports,
+    issues,
+  };
+}
+
+export function formatPaymentsDoctorReport(report: PaymentsDoctorReport): string {
+  if (report.ok) {
+    return [
+      "Eazo Payments SDK doctor passed.",
+      `- minimum: ${report.minimumVersion}`,
+      `- declared: ${report.declaredSpec}`,
+      `- installed: ${report.installedVersion}`,
+      `- lockfile: ${report.lockfiles.join(", ")}`,
+    ].join("\n");
+  }
+  return [
+    "Eazo Payments SDK doctor failed:",
+    ...report.issues.map((issue) => `- ${issue}`),
+    "Install the canonical sdk_package_spec, update the lockfile, and run this command again.",
+  ].join("\n");
+}
 
 function normalizeNewline(content: string) {
   return content.trimStart().replace(/\s+$/, "") + "\n";
@@ -139,10 +316,10 @@ export type PaymentUnlockPanelProps = EazoPaymentUnlockPanelProps;
 export function PaymentUnlockPanel(props: PaymentUnlockPanelProps) {
   return (
     <EazoPaymentUnlockPanel
-      title="Premium unlock"
-      description="Unlock the paid experience for this app."
-      ctaLabel="Unlock premium"
-      activeLabel="Premium active"
+      title="Paid access"
+      description="Sign in and pay securely with Eazo."
+      ctaLabel="Continue to payment"
+      activeLabel="Access active"
       pendingLabel="Continue payment"
       {...props}
     />
@@ -192,10 +369,10 @@ export type SubscriptionManagementPanelProps = {
 export function SubscriptionManagementPanel({ children }: SubscriptionManagementPanelProps) {
   return (
     <EazoSubscriptionManagementPanel
-      title="Your app subscriptions"
+      title="Subscriptions"
       emptyLabel="No subscriptions yet"
-      cancelLabel="Cancel renewal"
-      resumeLabel="Resume renewal"
+      cancelLabel="Cancel"
+      resumeLabel="Resume"
     >
       {children}
     </EazoSubscriptionManagementPanel>
@@ -217,6 +394,7 @@ import {
   EAZO_PAYMENT_CURRENCY,
   EAZO_PAYMENT_MODE,
   defineEazoPaymentProducts,
+  getEazoPaymentPriceLimits,
 } from "@eazo/sdk/payments";
 import {
   createEazoCancelSubscriptionRoute,
@@ -308,6 +486,37 @@ describe("Eazo Payments integration contract", () => {
     expect(TEST_PRODUCT.entitlementKey).toBe(TEST_PRODUCT.key);
   });
 
+  it("keeps the catalog price inside the SDK legal range", () => {
+    const limits = getEazoPaymentPriceLimits(TEST_PRODUCT.currency);
+    expect(TEST_PRODUCT.unitAmount).toBeGreaterThanOrEqual(limits.minimumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount).toBeLessThanOrEqual(limits.maximumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount % limits.unitAmountMultiple).toBe(0);
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        below_minimum: {
+          key: "below_minimum",
+          name: "Below minimum",
+          unitAmount: limits.minimumUnitAmount - 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode,
+        },
+      } as const),
+    ).toThrow("must be at least");
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        above_maximum: {
+          key: "above_maximum",
+          name: "Above maximum",
+          unitAmount: limits.maximumUnitAmount + 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode,
+        },
+      } as const),
+    ).toThrow("must not exceed");
+  });
+
   it("rejects invalid product keys and modes", () => {
     expect(() =>
       defineEazoPaymentProducts({
@@ -359,7 +568,7 @@ describe("Eazo Payments integration contract", () => {
       paymentId: "cap_test_eazo",
     });
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/checkout-sessions",
+      "https://dev1.eazo.ai/creator/api/open/payments/checkout-sessions",
       expect.objectContaining({
         method: "POST",
         headers: {
@@ -426,7 +635,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.paid).toBe(status === "succeeded");
       expect(fetch).toHaveBeenCalledWith(
-        "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test",
+        "https://dev1.eazo.ai/creator/api/open/payments/cap_test_eazo/status?app_id=app_test",
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -448,7 +657,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.active).toBe(status === "active");
       expect(fetch).toHaveBeenCalledWith(
-        \`https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
+        \`https://dev1.eazo.ai/creator/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -504,7 +713,7 @@ describe("Eazo Payments integration contract", () => {
     assertEazoPaymentStatusContract(body);
     expect(body).toEqual(mockEazoPaymentStatus("succeeded"));
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
+      "https://dev1.eazo.ai/creator/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
       {
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -525,7 +734,7 @@ describe("Eazo Payments integration contract", () => {
 
     expect(response.status).toBe(200);
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
+      "https://dev1.eazo.ai/creator/api/open/payments/cap_test_eazo/status?app_id=app_test&app_user_id=app_user_test",
       {
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -549,7 +758,7 @@ describe("Eazo Payments integration contract", () => {
     assertEazoEntitlementContract(body);
     expect(body).toEqual(mockEazoEntitlement("active", { product_key: TEST_PRODUCT.key }));
     expect(fetch).toHaveBeenCalledWith(
-      \`https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
+      \`https://dev1.eazo.ai/creator/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
       {
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -572,7 +781,7 @@ describe("Eazo Payments integration contract", () => {
 
       expect(response.status).toBe(200);
       expect(fetch).toHaveBeenCalledWith(
-        \`https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
+        \`https://dev1.eazo.ai/creator/api/open/payments/entitlements?app_id=app_test&product_key=\${TEST_PRODUCT.key}&app_user_id=app_user_test\`,
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store",
@@ -593,7 +802,7 @@ describe("Eazo Payments integration contract", () => {
     expect(listResponse.status).toBe(200);
     assertEazoSubscriptionsResponseContract(await listResponse.json());
     expect(fetch).toHaveBeenLastCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
       {
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store",
@@ -611,7 +820,7 @@ describe("Eazo Payments integration contract", () => {
     expect(cancelResponse.status).toBe(200);
     assertEazoSubscriptionContract((await cancelResponse.json()).subscription);
     expect(fetch).toHaveBeenLastCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test/cancel",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions/cas_test/cancel",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
@@ -629,7 +838,7 @@ describe("Eazo Payments integration contract", () => {
     expect(resumeResponse.status).toBe(200);
     assertEazoSubscriptionContract((await resumeResponse.json()).subscription);
     expect(fetch).toHaveBeenLastCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test/resume",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions/cas_test/resume",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" }),
@@ -699,8 +908,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@eazo/sdk/payments/react", () => ({
   EazoPaymentUnlockPanel: ({
-    title = "Premium unlock",
-    ctaLabel = "Unlock premium",
+    title = "Paid access",
+    ctaLabel = "Continue to payment",
   }: {
     title?: React.ReactNode;
     ctaLabel?: React.ReactNode;
@@ -750,8 +959,8 @@ describe("Eazo payment UI contract", () => {
   it("uses the SDK lifecycle panel for checkout UI", () => {
     render(<PaymentUnlockPanel />);
 
-    expect(screen.getByText("Premium unlock")).toBeTruthy();
-    screen.getByRole("button", { name: "Unlock premium" }).click();
+    expect(screen.getByText("Paid access")).toBeTruthy();
+    screen.getByRole("button", { name: "Continue to payment" }).click();
     expect(mocks.checkout).toHaveBeenCalledTimes(1);
   });
 
@@ -871,10 +1080,12 @@ export function scaffoldPayments(options: ScaffoldOptions = {}) {
 
 function printUsage() {
   console.log(`Usage:
-  eazo-sdk payments init --recipe one-time-unlock [--force] [--cwd <path>]
-  eazo-sdk payments init --recipe monthly-subscription [--force] [--cwd <path>]
+  eazo-sdk payments doctor [--minimum-version <version>] [--cwd <path>]
+  eazo-sdk payments init --recipe one-time-unlock [--minimum-version <version>] [--force] [--cwd <path>]
+  eazo-sdk payments init --recipe monthly-subscription [--minimum-version <version>] [--force] [--cwd <path>]
 
 Commands:
+  payments doctor Validate the declared, installed, and exported Payment SDK contract.
   payments init   Scaffold Eazo marketplace payment files for a Next.js app.
 `);
 }
@@ -887,14 +1098,24 @@ function readOption(args: string[], name: string): string | null {
 
 export function main(argv = process.argv.slice(2)) {
   const [domain, command] = argv;
-  if (domain !== "payments" || command !== "init") {
+  if (domain !== "payments" || !["doctor", "init"].includes(command || "")) {
     printUsage();
     return domain ? 1 : 0;
   }
 
+  const cwd = readOption(argv, "--cwd") || process.cwd();
+  const doctor = inspectPaymentsInstallation({
+    cwd,
+    minimumVersion:
+      readOption(argv, "--minimum-version") || EAZO_PAYMENTS_MIN_SDK_VERSION,
+  });
+  console.log(formatPaymentsDoctorReport(doctor));
+  if (!doctor.ok) return 1;
+  if (command === "doctor") return 0;
+
   const result = scaffoldPayments({
     recipe: readOption(argv, "--recipe") || DEFAULT_RECIPE,
-    cwd: readOption(argv, "--cwd") || process.cwd(),
+    cwd,
     force: argv.includes("--force"),
     dryRun: argv.includes("--dry-run"),
   });

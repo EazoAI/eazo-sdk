@@ -12,10 +12,10 @@ export type PaymentUnlockPanelProps = EazoPaymentUnlockPanelProps;
 export function PaymentUnlockPanel(props: PaymentUnlockPanelProps) {
   return (
     <EazoPaymentUnlockPanel
-      title="Premium unlock"
-      description="Unlock the paid experience for this app."
-      ctaLabel="Unlock premium"
-      activeLabel="Premium active"
+      title="Paid access"
+      description="Sign in and pay securely with Eazo."
+      ctaLabel="Continue to payment"
+      activeLabel="Access active"
       pendingLabel="Continue payment"
       {...props}
     />

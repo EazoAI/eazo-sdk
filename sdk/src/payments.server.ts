@@ -2,8 +2,10 @@ import {
   assertEazoPaymentCurrency,
   assertEazoPaymentMode,
   assertEazoPaymentProductKey,
+  assertEazoPaymentUnitAmount,
   EAZO_PAYMENT_MODE,
   EazoPaymentApiError,
+  getEazoPaymentPriceLimits,
   normalizeEazoCheckoutResult,
   type EazoAppSubscription,
   type EazoAppSubscriptionsResponse,
@@ -31,17 +33,42 @@ function readEnvByNames(names: readonly string[]): string | null {
   return null;
 }
 
+export function deriveEazoCreatorApiBase(apiBase: string): string {
+  let url: URL;
+  try {
+    url = new URL(apiBase);
+  } catch {
+    throw new Error("Invalid EAZO_API_BASE");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Invalid EAZO_API_BASE");
+  }
+
+  url.search = "";
+  url.hash = "";
+  const path = url.pathname.replace(/\/+$/, "");
+  const usesCreatorSubdomain = url.hostname.toLowerCase().startsWith("creator.");
+  const alreadyUsesCreatorPath = path === "/creator" || path.endsWith("/creator");
+
+  if (!usesCreatorSubdomain && !alreadyUsesCreatorPath) {
+    url.pathname = `${path}/creator`;
+  } else {
+    url.pathname = path || "/";
+  }
+  return url.toString().replace(/\/$/, "");
+}
+
 export function requireEazoPaymentEnv(): EazoPaymentEnv {
-  const apiBase = readEnvByNames(["EAZO_API_BASE", "EAZO_PLATFORM_API_BASE"]);
+  const platformApiBase = readEnvByNames(["EAZO_API_BASE"]);
   const appId = readEnvByNames(["EAZO_APP_ID"]);
   const privateKey = readEnvByNames(["EAZO_PRIVATE_KEY"]);
 
-  if (!apiBase) throw new Error("Missing EAZO_API_BASE");
+  if (!platformApiBase) throw new Error("Missing EAZO_API_BASE");
   if (!appId) throw new Error("Missing EAZO_APP_ID");
   if (!privateKey) throw new Error("Missing EAZO_PRIVATE_KEY");
 
   return {
-    apiBase: apiBase.replace(/\/$/, ""),
+    apiBase: deriveEazoCreatorApiBase(platformApiBase),
     appId,
     privateKey,
   };
@@ -72,11 +99,16 @@ export function buildEazoCheckoutRequest(
   assertEazoPaymentProductKey(entitlementKey, "entitlement key");
   assertEazoPaymentMode(mode);
   assertEazoPaymentCurrency(input.currency);
-  if (!Number.isInteger(input.unitAmount) || input.unitAmount <= 0) {
-    throw new Error("unitAmount must be a positive integer in cents");
-  }
+  assertEazoPaymentUnitAmount(input.unitAmount, input.currency);
   if (input.quantity !== undefined && (!Number.isInteger(input.quantity) || input.quantity <= 0)) {
     throw new Error("quantity must be a positive integer");
+  }
+  const quantity = input.quantity || 1;
+  const maximumUnitAmount = getEazoPaymentPriceLimits(input.currency).maximumUnitAmount;
+  if (input.unitAmount * quantity > maximumUnitAmount) {
+    throw new Error(
+      `checkout total for ${input.currency.toUpperCase()} must not exceed ${maximumUnitAmount} in minor currency units`,
+    );
   }
   if (!input.productName || typeof input.productName !== "string") {
     throw new Error("productName is required");
@@ -93,7 +125,7 @@ export function buildEazoCheckoutRequest(
     product_name: input.productName,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-    quantity: input.quantity || 1,
+    quantity,
     metadata: {
       product_key: productKey,
       entitlement_key: entitlementKey,

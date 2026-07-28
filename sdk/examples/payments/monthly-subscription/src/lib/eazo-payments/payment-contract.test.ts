@@ -8,7 +8,8 @@ import {
 import {
   EAZO_PAYMENT_CURRENCY,
   EAZO_PAYMENT_MODE,
-  defineEazoPaymentProducts
+  defineEazoPaymentProducts,
+  getEazoPaymentPriceLimits
 } from "@eazo/sdk/payments";
 import {
   createEazoCancelSubscriptionRoute,
@@ -99,6 +100,37 @@ describe("Eazo Payments integration contract", () => {
     expect(TEST_PRODUCT.entitlementKey).toBe(TEST_PRODUCT.key);
   });
 
+  it("keeps the catalog price inside the SDK legal range", () => {
+    const limits = getEazoPaymentPriceLimits(TEST_PRODUCT.currency);
+    expect(TEST_PRODUCT.unitAmount).toBeGreaterThanOrEqual(limits.minimumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount).toBeLessThanOrEqual(limits.maximumUnitAmount);
+    expect(TEST_PRODUCT.unitAmount % limits.unitAmountMultiple).toBe(0);
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        below_minimum: {
+          key: "below_minimum",
+          name: "Below minimum",
+          unitAmount: limits.minimumUnitAmount - 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode
+        }
+      } as const)
+    ).toThrow("must be at least");
+
+    expect(() =>
+      defineEazoPaymentProducts({
+        above_maximum: {
+          key: "above_maximum",
+          name: "Above maximum",
+          unitAmount: limits.maximumUnitAmount + 1,
+          currency: TEST_PRODUCT.currency,
+          mode: TEST_PRODUCT.mode
+        }
+      } as const)
+    ).toThrow("must not exceed");
+  });
+
   it("rejects invalid product keys and modes", () => {
     expect(() =>
       defineEazoPaymentProducts({
@@ -150,7 +182,7 @@ describe("Eazo Payments integration contract", () => {
       paymentId: "cap_test_eazo"
     });
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/checkout-sessions",
+      "https://dev1.eazo.ai/creator/api/open/payments/checkout-sessions",
       expect.objectContaining({
         method: "POST",
         headers: {
@@ -216,7 +248,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.paid).toBe(status === "succeeded");
       expect(fetch).toHaveBeenCalledWith(
-        "https://dev1.eazo.ai/api/open/payments/cap_test_eazo/status?app_id=app_test",
+        "https://dev1.eazo.ai/creator/api/open/payments/cap_test_eazo/status?app_id=app_test",
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store"
@@ -238,7 +270,7 @@ describe("Eazo Payments integration contract", () => {
       expect(result.status).toBe(status);
       expect(result.active).toBe(status === "active");
       expect(fetch).toHaveBeenCalledWith(
-        `https://dev1.eazo.ai/api/open/payments/entitlements?app_id=app_test&product_key=${TEST_PRODUCT.key}&app_user_id=app_user_test`,
+        `https://dev1.eazo.ai/creator/api/open/payments/entitlements?app_id=app_test&product_key=${TEST_PRODUCT.key}&app_user_id=app_user_test`,
         {
           headers: { Authorization: "Bearer eazo_private_test" },
           cache: "no-store"
@@ -327,7 +359,7 @@ describe("Eazo Payments integration contract", () => {
     expect(listResponse.status).toBe(200);
     assertEazoSubscriptionsResponseContract(await listResponse.json());
     expect(fetch).toHaveBeenCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions?app_id=app_test&app_user_id=app_user_test&limit=50&offset=0",
       {
         headers: { Authorization: "Bearer eazo_private_test" },
         cache: "no-store"
@@ -345,7 +377,7 @@ describe("Eazo Payments integration contract", () => {
     expect(cancelResponse.status).toBe(200);
     assertEazoSubscriptionContract((await cancelResponse.json()).subscription);
     expect(fetch).toHaveBeenLastCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/cancel",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions/cas_test_eazo/cancel",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" })
@@ -363,7 +395,7 @@ describe("Eazo Payments integration contract", () => {
     expect(resumeResponse.status).toBe(200);
     assertEazoSubscriptionContract((await resumeResponse.json()).subscription);
     expect(fetch).toHaveBeenLastCalledWith(
-      "https://dev1.eazo.ai/api/open/payments/subscriptions/cas_test_eazo/resume",
+      "https://dev1.eazo.ai/creator/api/open/payments/subscriptions/cas_test_eazo/resume",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ app_id: "app_test", app_user_id: "app_user_test" })
