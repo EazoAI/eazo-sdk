@@ -190,9 +190,19 @@ Throws `EazoNotificationPublishError` on platform-level errors (`code` 401 = bad
 
 Eazo marketplace payments are available through the payments subpaths. Generated apps create local Next.js routes and pages, but the platform checkout/status calls stay inside the SDK.
 
+Install a Payment SDK-compatible release, validate the dependency and lockfile,
+then scaffold from that installed package:
+
 ```bash
-pnpm dlx @eazo/sdk payments init --recipe one-time-unlock
+pnpm add '@eazo/sdk@>=0.22.3'
+./node_modules/.bin/eazo-sdk payments doctor --minimum-version 0.22.3
+./node_modules/.bin/eazo-sdk payments init --minimum-version 0.22.3 --recipe one-time-unlock
 ```
+
+Eazo-generated apps should use the platform-provided `sdk_package_spec` instead
+of assuming the public npm source. `0.22.3` is a compatibility floor, not an
+upper-bound pin; later compatible releases such as `0.23.x` or `0.24.x` remain
+valid when the required payment exports are present.
 
 Generated files include:
 

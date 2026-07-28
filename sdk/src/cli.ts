@@ -17,6 +17,183 @@ type TemplateFile = {
 
 const DEFAULT_RECIPE = "one-time-unlock";
 const SUPPORTED_RECIPES = new Set(["one-time-unlock", "monthly-subscription"]);
+export const EAZO_PAYMENTS_MIN_SDK_VERSION = "0.22.3";
+export const EAZO_PAYMENTS_REQUIRED_EXPORTS = [
+  "./payments",
+  "./payments/react",
+  "./payments/server",
+  "./payments/next",
+  "./payments/next/client",
+  "./payments/testing",
+] as const;
+
+type PackageJson = {
+  version?: string;
+  exports?: Record<string, unknown>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+};
+
+export type PaymentsDoctorOptions = {
+  cwd?: string;
+  minimumVersion?: string;
+};
+
+export type PaymentsDoctorReport = {
+  ok: boolean;
+  cwd: string;
+  minimumVersion: string;
+  declaredSpec: string | null;
+  installedVersion: string | null;
+  lockfiles: string[];
+  missingExports: string[];
+  issues: string[];
+};
+
+type ParsedSemver = {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: boolean;
+};
+
+function readJsonFile(filePath: string): PackageJson | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as PackageJson;
+  } catch {
+    return null;
+  }
+}
+
+function parseSemver(value: string): ParsedSemver | null {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: Boolean(match[4]),
+  };
+}
+
+function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] !== right[key]) return left[key] - right[key];
+  }
+  if (left.prerelease === right.prerelease) return 0;
+  return left.prerelease ? -1 : 1;
+}
+
+function isVersionAtLeast(version: string, minimumVersion: string): boolean {
+  const parsedVersion = parseSemver(version);
+  const parsedMinimum = parseSemver(minimumVersion);
+  if (!parsedVersion || !parsedMinimum) return false;
+  return compareSemver(parsedVersion, parsedMinimum) >= 0;
+}
+
+function declaredSdkSpec(packageJson: PackageJson | null): string | null {
+  if (!packageJson) return null;
+  for (const dependencies of [
+    packageJson.dependencies,
+    packageJson.devDependencies,
+    packageJson.optionalDependencies,
+    packageJson.peerDependencies,
+  ]) {
+    const spec = dependencies?.["@eazo/sdk"]?.trim();
+    if (spec) return spec;
+  }
+  return null;
+}
+
+function declaredRegistryVersion(spec: string | null): string | null {
+  if (!spec || /^(?:https?:|file:|git(?:\+|:)|github:|workspace:|link:)/.test(spec)) {
+    return null;
+  }
+  const match = spec.match(/(?:^|[~^<>=\s])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/);
+  return match?.[1] ?? null;
+}
+
+export function inspectPaymentsInstallation(
+  options: PaymentsDoctorOptions = {},
+): PaymentsDoctorReport {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const minimumVersion = options.minimumVersion || EAZO_PAYMENTS_MIN_SDK_VERSION;
+  const projectPackage = readJsonFile(path.join(cwd, "package.json"));
+  const installedPackage = readJsonFile(
+    path.join(cwd, "node_modules", "@eazo", "sdk", "package.json"),
+  );
+  const declaredSpec = declaredSdkSpec(projectPackage);
+  const installedVersion = installedPackage?.version?.trim() || null;
+  const lockfiles = [
+    "bun.lock",
+    "bun.lockb",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+  ].filter((filename) => fs.existsSync(path.join(cwd, filename)));
+  const installedExports = new Set(Object.keys(installedPackage?.exports || {}));
+  const missingExports = EAZO_PAYMENTS_REQUIRED_EXPORTS.filter(
+    (exportPath) => !installedExports.has(exportPath),
+  );
+  const issues: string[] = [];
+
+  if (!projectPackage) {
+    issues.push("Missing or unreadable package.json.");
+  }
+  if (!declaredSpec) {
+    issues.push("package.json must declare @eazo/sdk.");
+  }
+  const declaredVersion = declaredRegistryVersion(declaredSpec);
+  if (declaredVersion && !isVersionAtLeast(declaredVersion, minimumVersion)) {
+    issues.push(
+      `package.json declares @eazo/sdk ${declaredSpec}, below the Payment SDK minimum ${minimumVersion}.`,
+    );
+  }
+  if (!installedPackage || !installedVersion) {
+    issues.push("Install @eazo/sdk before running the Payment SDK scaffold.");
+  } else if (!isVersionAtLeast(installedVersion, minimumVersion)) {
+    issues.push(
+      `Installed @eazo/sdk ${installedVersion} is below the Payment SDK minimum ${minimumVersion}.`,
+    );
+  }
+  if (missingExports.length > 0) {
+    issues.push(`Installed @eazo/sdk is missing exports: ${missingExports.join(", ")}.`);
+  }
+  if (lockfiles.length === 0) {
+    issues.push("No package-manager lockfile found; install dependencies and commit the lockfile.");
+  }
+
+  return {
+    ok: issues.length === 0,
+    cwd,
+    minimumVersion,
+    declaredSpec,
+    installedVersion,
+    lockfiles,
+    missingExports,
+    issues,
+  };
+}
+
+export function formatPaymentsDoctorReport(report: PaymentsDoctorReport): string {
+  if (report.ok) {
+    return [
+      "Eazo Payments SDK doctor passed.",
+      `- minimum: ${report.minimumVersion}`,
+      `- declared: ${report.declaredSpec}`,
+      `- installed: ${report.installedVersion}`,
+      `- lockfile: ${report.lockfiles.join(", ")}`,
+    ].join("\n");
+  }
+  return [
+    "Eazo Payments SDK doctor failed:",
+    ...report.issues.map((issue) => `- ${issue}`),
+    "Install the canonical sdk_package_spec, update the lockfile, and run this command again.",
+  ].join("\n");
+}
 
 function normalizeNewline(content: string) {
   return content.trimStart().replace(/\s+$/, "") + "\n";
@@ -903,10 +1080,12 @@ export function scaffoldPayments(options: ScaffoldOptions = {}) {
 
 function printUsage() {
   console.log(`Usage:
-  eazo-sdk payments init --recipe one-time-unlock [--force] [--cwd <path>]
-  eazo-sdk payments init --recipe monthly-subscription [--force] [--cwd <path>]
+  eazo-sdk payments doctor [--minimum-version <version>] [--cwd <path>]
+  eazo-sdk payments init --recipe one-time-unlock [--minimum-version <version>] [--force] [--cwd <path>]
+  eazo-sdk payments init --recipe monthly-subscription [--minimum-version <version>] [--force] [--cwd <path>]
 
 Commands:
+  payments doctor Validate the declared, installed, and exported Payment SDK contract.
   payments init   Scaffold Eazo marketplace payment files for a Next.js app.
 `);
 }
@@ -919,14 +1098,24 @@ function readOption(args: string[], name: string): string | null {
 
 export function main(argv = process.argv.slice(2)) {
   const [domain, command] = argv;
-  if (domain !== "payments" || command !== "init") {
+  if (domain !== "payments" || !["doctor", "init"].includes(command || "")) {
     printUsage();
     return domain ? 1 : 0;
   }
 
+  const cwd = readOption(argv, "--cwd") || process.cwd();
+  const doctor = inspectPaymentsInstallation({
+    cwd,
+    minimumVersion:
+      readOption(argv, "--minimum-version") || EAZO_PAYMENTS_MIN_SDK_VERSION,
+  });
+  console.log(formatPaymentsDoctorReport(doctor));
+  if (!doctor.ok) return 1;
+  if (command === "doctor") return 0;
+
   const result = scaffoldPayments({
     recipe: readOption(argv, "--recipe") || DEFAULT_RECIPE,
-    cwd: readOption(argv, "--cwd") || process.cwd(),
+    cwd,
     force: argv.includes("--force"),
     dryRun: argv.includes("--dry-run"),
   });

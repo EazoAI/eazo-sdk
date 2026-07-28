@@ -4,7 +4,13 @@ import * as os from "os";
 import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { scaffoldPayments } from "../cli";
+import {
+  EAZO_PAYMENTS_MIN_SDK_VERSION,
+  EAZO_PAYMENTS_REQUIRED_EXPORTS,
+  inspectPaymentsInstallation,
+  main as paymentsCliMain,
+  scaffoldPayments,
+} from "../cli";
 import {
   assertEazoPaymentUnitAmount,
   defineEazoPaymentProducts,
@@ -137,6 +143,37 @@ function installMobileHost(session: unknown) {
 
 function removeMobileHost() {
   delete (globalThis.window as unknown as RNGlobal).ReactNativeWebView;
+}
+
+function createPaymentsDoctorFixture(options: {
+  declaredSpec: string;
+  installedVersion: string;
+  exports?: readonly string[];
+}) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eazo-payments-doctor-"));
+  fs.mkdirSync(path.join(cwd, "node_modules", "@eazo", "sdk"), { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, "package.json"),
+    JSON.stringify({
+      private: true,
+      dependencies: { "@eazo/sdk": options.declaredSpec },
+    }),
+  );
+  fs.writeFileSync(path.join(cwd, "bun.lock"), "// test lockfile\n");
+  fs.writeFileSync(
+    path.join(cwd, "node_modules", "@eazo", "sdk", "package.json"),
+    JSON.stringify({
+      name: "@eazo/sdk",
+      version: options.installedVersion,
+      exports: Object.fromEntries(
+        (options.exports ?? EAZO_PAYMENTS_REQUIRED_EXPORTS).map((key) => [
+          key,
+          `./dist/${key.replace(/^\.\//, "").replaceAll("/", ".")}.js`,
+        ]),
+      ),
+    }),
+  );
+  return cwd;
 }
 
 describe("Eazo Payments SDK", () => {
@@ -1282,6 +1319,100 @@ describe("Eazo Payments SDK", () => {
     expect(contractTest).toContain("below_minimum");
     expect(contractTest).toContain("above_maximum");
     assertNoLegacyPaymentFlowSource(uiTest, "payment-ui-contract.test.tsx");
+  });
+
+  it("rejects SDK versions below the Payment SDK minimum", () => {
+    const cwd = createPaymentsDoctorFixture({
+      declaredSpec: "0.22.2",
+      installedVersion: "0.22.2",
+    });
+
+    const report = inspectPaymentsInstallation({ cwd });
+
+    expect(EAZO_PAYMENTS_MIN_SDK_VERSION).toBe("0.22.3");
+    expect(report.ok).toBe(false);
+    expect(report.issues.join("\n")).toContain("below the Payment SDK minimum 0.22.3");
+  });
+
+  it.each(["0.22.3", "0.23.0", "0.24.0"])(
+    "accepts compatible SDK version %s when all payment exports exist",
+    (version) => {
+      const cwd = createPaymentsDoctorFixture({
+        declaredSpec: version,
+        installedVersion: version,
+      });
+
+      expect(inspectPaymentsInstallation({ cwd })).toMatchObject({
+        ok: true,
+        minimumVersion: "0.22.3",
+        declaredSpec: version,
+        installedVersion: version,
+        missingExports: [],
+      });
+    },
+  );
+
+  it("accepts a future platform minimum without hard-coding an upper version", () => {
+    const cwd = createPaymentsDoctorFixture({
+      declaredSpec: "0.24.0",
+      installedVersion: "0.24.0",
+    });
+
+    expect(
+      inspectPaymentsInstallation({ cwd, minimumVersion: "0.23.0" }),
+    ).toMatchObject({
+      ok: true,
+      minimumVersion: "0.23.0",
+      installedVersion: "0.24.0",
+    });
+  });
+
+  it("rejects a stale declared dependency even when sdk:sync masks node_modules", () => {
+    const cwd = createPaymentsDoctorFixture({
+      declaredSpec: "0.22.1",
+      installedVersion: "0.22.3",
+    });
+
+    const report = inspectPaymentsInstallation({ cwd });
+
+    expect(report.ok).toBe(false);
+    expect(report.issues.join("\n")).toContain(
+      "package.json declares @eazo/sdk 0.22.1",
+    );
+  });
+
+  it("rejects compatible versions that do not expose the complete Payment SDK", () => {
+    const cwd = createPaymentsDoctorFixture({
+      declaredSpec: "0.24.0",
+      installedVersion: "0.24.0",
+      exports: ["./payments", "./payments/react"],
+    });
+
+    const report = inspectPaymentsInstallation({ cwd });
+
+    expect(report.ok).toBe(false);
+    expect(report.missingExports).toContain("./payments/next/client");
+  });
+
+  it("blocks CLI scaffolding until the Payment SDK doctor passes", () => {
+    const cwd = createPaymentsDoctorFixture({
+      declaredSpec: "0.22.1",
+      installedVersion: "0.22.1",
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    expect(
+      paymentsCliMain([
+        "payments",
+        "init",
+        "--cwd",
+        cwd,
+        "--recipe",
+        "one-time-unlock",
+      ]),
+    ).toBe(1);
+    expect(fs.existsSync(path.join(cwd, "src/lib/eazo-payments/catalog.ts"))).toBe(false);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("doctor failed"));
   });
 
   it("scaffolds monthly subscription files without exposing interval", () => {
