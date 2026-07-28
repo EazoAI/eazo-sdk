@@ -131,11 +131,40 @@ const { subscribed } = await notifications.isSubscribed();
 if (!subscribed) await notifications.subscribe();   // opt the user in
 // later…
 await notifications.unsubscribe();                  // opt the user out
+
+await notifications.syncSchedules({
+  title: "Hydration",
+  schedules: [
+    {
+      id: "water-2200",
+      type: "time",
+      time: "22:00",
+      weekdays: [1, 2, 3, 4, 5],
+      body: "Drink a glass of water.",
+    },
+    {
+      id: "daytime-interval",
+      type: "interval",
+      intervalMinutes: 30,
+      activeWindow: { from: "08:00", until: "18:00" },
+    },
+  ],
+});
 ```
 
-In a plain browser (no host) every method resolves `{ subscribed: false }` — no throws — so apps can render the right UI during local web development without special-casing.
+`syncSchedules` is replace-style: omitted IDs are removed and an empty
+`schedules` array clears the app's reminders. Times use the user's local wall
+clock and weekdays use ISO values (`1` = Monday through `7` = Sunday). Eazo
+Mobile sends the set to the platform, which owns recurrence and delivery even
+after the WebView is backgrounded or killed.
 
-**Publishing** is a separate, server-side surface — see [`@eazo/sdk/server` notifications](#server-notifications-publish).
+In a plain browser (no host), subscription methods resolve
+`{ subscribed: false }` and `syncSchedules` resolves
+`{ synced: false, scheduledCount: 0, permissionGranted: false }`, so apps can
+render the right UI during local development without special-casing.
+
+**Publishing** is a separate, subscriber-only server surface. See
+[`@eazo/sdk/server` notifications](#server-notifications-publish).
 
 ### React integration
 
@@ -182,7 +211,8 @@ export async function POST() {
 }
 ```
 
-`audience` defaults to `"subscribers"` (v1's only value).
+`audience` is `"subscribers"` (v1's only supported value). Server publish
+cannot target arbitrary user IDs.
 
 Throws `EazoNotificationPublishError` on platform-level errors (`code` 401 = bad JWT, 403 = appId doesn't belong to your key, 413 = >5,000 subscribers, etc.).
 

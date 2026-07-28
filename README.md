@@ -16,7 +16,7 @@ Capabilities (`import { … } from "@eazo/sdk"`):
 - `storage` — presigned S3 upload / download
 - `memory` — Gum memory service client
 - `ai` — OpenAI-compatible AI gateway
-- `notifications` — per-app push subscription toggle (frontend); `notifications.publish` from `@eazo/sdk/server` for server-to-server pushes
+- `notifications` — per-app push subscription and platform-hosted reminder schedules (frontend); subscriber-only `notifications.publish` from `@eazo/sdk/server`
 - `payments` — Eazo marketplace payment checkout helpers; server routes call Eazo with `EAZO_PRIVATE_KEY`, generated apps never receive Stripe secrets
 - `useEazo(selector)` — React integration via `useSyncExternalStore`
 - `requireAuth` — server-side session decrypt + guard for Next.js / Remix route handlers

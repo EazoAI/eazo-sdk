@@ -209,4 +209,18 @@ describe("notifications — pure web path", () => {
     const result = await promise;
     expect(result).toEqual({ subscribed: false });
   });
+
+  it("resolves an unsynced schedule result when no host responds", async () => {
+    const promise = notifications.syncSchedules({
+      title: "Hydration",
+      schedules: [],
+    });
+    await new Promise((r) => setTimeout(r, 1700));
+
+    await expect(promise).resolves.toEqual({
+      synced: false,
+      scheduledCount: 0,
+      permissionGranted: false,
+    });
+  });
 });
