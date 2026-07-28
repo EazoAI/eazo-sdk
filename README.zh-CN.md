@@ -11,6 +11,7 @@ Eazo 平台应用的官方 SDK。
 - `auth` — 统一登录流程（浏览器内走 SDK 自带 UI，Eazo Mobile 下委托给宿主原生登录）、会话管理、用户资料、token 获取
 - `device` — 运行时上下文（platform / locale / safe area / backend URL）
 - `share` — 把文字、图片附件和可选 App 内目标路径交给 Eazo Mobile 的发帖编辑器
+- `payments` — Eazo marketplace 收款能力；生成 App 通过 `@eazo/sdk/payments` 发起 checkout，永远不接收 Stripe secret
 - `useEazo(selector)` — 基于 `useSyncExternalStore` 的 React 集成
 - `requireAuth` — 服务端 Next.js API route 的解密与鉴权守卫
 - 内置 ECC secp256k1 + AES-256-GCM 混合加密用于 session token
@@ -42,6 +43,11 @@ function Header() {
   if (!user) return <button onClick={() => auth.login()}>登录</button>;
   return <span>你好，{user.name}</span>;
 }
+```
+
+```bash
+# Next.js 单次解锁收款脚手架
+pnpm dlx @eazo/sdk payments init --recipe one-time-unlock
 ```
 
 完整 API 见 [`sdk/README.md`](./sdk/README.md)，Host-App 通信协议见 [`sdk/PROTOCOL.md`](./sdk/PROTOCOL.md)。

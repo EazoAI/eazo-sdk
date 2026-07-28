@@ -1,6 +1,6 @@
 {
   "name": "@eazo/sdk",
-  "version": "0.22.1",
+  "version": "0.22.3",
   "description": "Eazo platform SDK — capability-first API for web apps that run on Eazo Mobile and the web browser",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,13 +21,41 @@
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
     },
+    "./payments": {
+      "types": "./dist/payments.d.ts",
+      "default": "./dist/payments.js"
+    },
+    "./payments/react": {
+      "types": "./dist/payments.react.d.ts",
+      "default": "./dist/payments.react.js"
+    },
+    "./payments/server": {
+      "types": "./dist/payments.server.d.ts",
+      "default": "./dist/payments.server.js"
+    },
+    "./payments/next": {
+      "types": "./dist/payments.next.d.ts",
+      "default": "./dist/payments.next.js"
+    },
+    "./payments/next/client": {
+      "types": "./dist/payments.next.client.d.ts",
+      "default": "./dist/payments.next.client.js"
+    },
+    "./payments/testing": {
+      "types": "./dist/payments.testing.d.ts",
+      "default": "./dist/payments.testing.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     }
   },
+  "bin": {
+    "eazo-sdk": "./dist/cli.js"
+  },
   "files": [
     "dist",
+    "examples",
     "README.md",
     "PROTOCOL.md"
   ],

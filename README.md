@@ -17,6 +17,7 @@ Capabilities (`import { … } from "@eazo/sdk"`):
 - `memory` — Gum memory service client
 - `ai` — OpenAI-compatible AI gateway
 - `notifications` — per-app push subscription toggle (frontend); `notifications.publish` from `@eazo/sdk/server` for server-to-server pushes
+- `payments` — Eazo marketplace payment checkout helpers; server routes call Eazo with `EAZO_PRIVATE_KEY`, generated apps never receive Stripe secrets
 - `useEazo(selector)` — React integration via `useSyncExternalStore`
 - `requireAuth` — server-side session decrypt + guard for Next.js / Remix route handlers
 
@@ -63,6 +64,11 @@ await notifications.publish({
   title: "Daily reminder",
   body: "Your tasks are waiting.",
 });
+```
+
+```bash
+# Next.js one-time unlock payment scaffold
+pnpm dlx @eazo/sdk payments init --recipe one-time-unlock
 ```
 
 Configure via `EAZO_APP_ID` and `EAZO_PRIVATE_KEY` in env. See [`sdk/README.md`](./sdk/README.md) for the full API and [`sdk/PROTOCOL.md`](./sdk/PROTOCOL.md) for the host-app wire protocol.
