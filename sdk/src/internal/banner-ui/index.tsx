@@ -37,6 +37,12 @@ const MOBILE_BREAKPOINT_PX = 480;
 // remix the app in the browser. The primary handoff CTAs keep their
 // default store / marketing fallback.
 const REMIX_FALLBACK_URL = "https://creator.eazo.ai/";
+// Master switch for the center handoff modal. The top banner alone now
+// carries the web→app handoff, so the modal never opens. Everything it
+// needs is still here (`Overlay`, `Orbit`, the modal CSS in `styles.ts`) —
+// flip this to `true` to bring it back. Typed as `boolean` on purpose so
+// the modal branch below stays live code rather than narrowing away.
+const MODAL_ENABLED: boolean = false;
 
 function isMobile(): boolean {
   if (typeof window === "undefined") return false;
@@ -85,10 +91,10 @@ function deriveInitials(name: string): string {
  *
  *   1. Top banner — Eazo mark + app identity (icon, name) + likes/comments
  *      stats + "Remix" and "Open in Eazo" CTAs. Always visible from first
- *      paint; non-dismissible.
+ *      paint; non-dismissible. This is the only piece that renders today.
  *   2. Full-screen scrim with coral spotlight + center modal (orbiting
- *      capability icons, app identity, QR + primary CTA). Appears after a
- *      delay; dismissible per page load.
+ *      capability icons, app identity, QR + primary CTA). DISABLED — gated
+ *      off by `MODAL_ENABLED`; kept intact so it can be switched back on.
  *
  * App identity (name, tagline, likes, comments) is fetched once from
  * `GET /apps-open/:appId`. The CTAs + QR encode the `eazo://` deep link;
@@ -113,12 +119,13 @@ export function EazoBrandBanner(): React.ReactElement | null {
   // is already in hand — no fetch is going to fire.
   const [loading, setLoading] = React.useState(() => getInitialAppInfo() === null);
   const [mobile, setMobile] = React.useState(false);
-  // Visibility of the strong-CTA modal. Opens immediately on load and
-  // shows once — dismissing (X / ESC) closes it for the rest of this page
-  // load, with no re-open. Intentionally NOT persisted: a fresh page load
-  // (navigation, refresh, new tab) engages the modal again. The top banner
-  // stays visible regardless.
-  const [modalOpen, setModalOpen] = React.useState(true);
+  // Visibility of the strong-CTA modal. Currently disabled via
+  // `MODAL_ENABLED` — it never opens, and only the top banner renders.
+  // When re-enabled it opens immediately on load and shows once:
+  // dismissing (X / ESC) closes it for the rest of this page load, with no
+  // re-open, and a fresh page load (navigation, refresh, new tab) engages
+  // it again. The top banner stays visible regardless.
+  const [modalOpen, setModalOpen] = React.useState(MODAL_ENABLED);
   // Resolved on mount in the browser. Encoded by the QR so a desktop
   // scan opens the EXACT page on a phone (which then sends the user
   // through the same handoff via the mobile route).

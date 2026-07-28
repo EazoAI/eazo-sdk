@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The center handoff modal no longer pops.** Web pages now get the top
+  banner only — no full-screen scrim, no center modal. The modal's code
+  (`Overlay`, `Orbit`, and its CSS) is kept in place behind a
+  `MODAL_ENABLED` switch in `banner-ui/index.tsx` so it can be turned back
+  on without a rewrite.
+
 ## [0.21.0] - 2026-06-11
 
 ### Changed
