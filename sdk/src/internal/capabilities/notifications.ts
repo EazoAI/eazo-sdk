@@ -2,7 +2,7 @@ import { waitForBootstrap, getBridge } from "../bootstrap";
 import {
   BridgeErrorObject,
   NOTIFICATIONS_IS_SUBSCRIBED,
-  NOTIFICATIONS_SUBSCRIBE,
+  NOTIFICATIONS_REQUEST_SUBSCRIPTION,
   NOTIFICATIONS_SYNC_SCHEDULES,
   NOTIFICATIONS_UNSUBSCRIBE,
 } from "../bridge/protocol";
@@ -70,17 +70,23 @@ export interface NotificationScheduleSyncResult {
   permissionGranted: boolean;
 }
 
-export interface NotificationsSubscriptionResult {
+export type NotificationSystemPermission =
+  | "granted"
+  | "denied"
+  | "blocked"
+  | "unavailable";
+
+export type NotificationsSubscriptionResult = {
   /**
    * Whether the current user is subscribed to push notifications from this
    * app *after* the call resolves. On the mobile path this reflects the
    * `apps_user.flags & APP_FLAG_SUBSCRIBED_PUSH` bit. On the plain-web path
-   * (no host) the SDK returns `{ subscribed: false }` and does not throw,
-   * so apps can call `isSubscribed()` from a `useEffect` without crashing
-   * during local web development.
+   * (no host) the SDK returns `false` and does not throw.
    */
   subscribed: boolean;
-}
+  /** Current OS-level notification permission reported by the host. */
+  systemPermission: NotificationSystemPermission;
+};
 
 /**
  * Per-app push-notification subscription, mediated by the host. The mobile
@@ -104,14 +110,18 @@ export const notifications = {
   },
 
   /**
-   * Opt the current user into push notifications from this app. Idempotent
-   * (re-subscribing returns `{ subscribed: true }` either way). The user
-   * still has to have granted system push permission at the OS level for
-   * any actual push to arrive — this method does not prompt for it; the
-   * mobile host handles permission once at login.
+   * Ask the host to authorize push notifications for this app. Call only
+   * from a direct user action; the host owns permission and confirmation UI.
+   */
+  async requestSubscription(): Promise<NotificationsSubscriptionResult> {
+    return invoke(NOTIFICATIONS_REQUEST_SUBSCRIPTION);
+  },
+
+  /**
+   * @deprecated Use `requestSubscription()` from a direct user action.
    */
   async subscribe(): Promise<NotificationsSubscriptionResult> {
-    return invoke(NOTIFICATIONS_SUBSCRIBE);
+    return notifications.requestSubscription();
   },
 
   /** Opt the current user out. Idempotent. */
@@ -171,23 +181,39 @@ export const notifications = {
 };
 
 async function invoke(fn: string): Promise<NotificationsSubscriptionResult> {
+  const fallback: NotificationsSubscriptionResult = {
+    subscribed: false,
+    systemPermission: "unavailable",
+  };
   const hello = await waitForBootstrap();
   const bridge = getBridge();
   if (hello && bridge?.getStatus().ready) {
     try {
       const result = await bridge.request<NotificationsSubscriptionResult>(fn);
-      return { subscribed: !!result?.subscribed };
+      return {
+        subscribed: !!result?.subscribed,
+        systemPermission: normalizeSystemPermission(result?.systemPermission),
+      };
     } catch (err) {
       if (
         err instanceof BridgeErrorObject &&
         (err.code === "NOT_SUPPORTED" || err.code === "TIMEOUT")
       ) {
-        // Web fallback: no host means no push channel. Return a falsey state
-        // so apps can render the right UI without special-casing.
-        return { subscribed: false };
+        return fallback;
       }
       throw err;
     }
   }
-  return { subscribed: false };
+  return fallback;
+}
+
+function normalizeSystemPermission(
+  value: NotificationSystemPermission | undefined,
+): NotificationSystemPermission {
+  return value === "granted" ||
+    value === "denied" ||
+    value === "blocked" ||
+    value === "unavailable"
+    ? value
+    : "unavailable";
 }

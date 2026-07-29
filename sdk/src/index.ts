@@ -22,6 +22,7 @@ export type {
   ShareImageAttachment,
 } from "./internal/capabilities/share";
 export type {
+  NotificationSystemPermission,
   NotificationsSubscriptionResult,
   NotificationSchedule,
   NotificationTimeSchedule,

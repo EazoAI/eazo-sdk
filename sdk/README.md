@@ -122,15 +122,22 @@ await share.compose({
 
 ### `notifications`
 
-Per-app push-notification subscription, mediated by the host. Calls flow through the postMessage bridge to the mobile shell which writes the per-(user, app) bit; the embedded app never talks to the platform directly here.
+Per-app push-notification authorization, mediated by the host. Calls flow
+through the postMessage bridge to the mobile shell, which derives the current
+user and app from its trusted WebView context. The embedded app never supplies
+those identities or talks to the platform directly here.
 
 ```ts
 import { notifications } from "@eazo/sdk";
 
-const { subscribed } = await notifications.isSubscribed();
-if (!subscribed) await notifications.subscribe();   // opt the user in
-// later…
-await notifications.unsubscribe();                  // opt the user out
+const state = await notifications.isSubscribed(); // read-only
+
+async function onEnableNotificationsClick() {
+  const result = await notifications.requestSubscription();
+  // result.systemPermission: "granted" | "denied" | "blocked" | "unavailable"
+}
+
+await notifications.unsubscribe(); // opt the user out
 
 await notifications.syncSchedules({
   title: "Hydration",
@@ -152,14 +159,21 @@ await notifications.syncSchedules({
 });
 ```
 
+Call `requestSubscription()` only from a direct user action. The Host owns any
+in-app confirmation and system-permission UI, then returns the resulting
+`subscribed` and `systemPermission` state. The legacy `subscribe()` method is a
+deprecated alias that uses this same authorization request.
+
 `syncSchedules` is replace-style: omitted IDs are removed and an empty
 `schedules` array clears the app's reminders. Times use the user's local wall
 clock and weekdays use ISO values (`1` = Monday through `7` = Sunday). Eazo
 Mobile sends the set to the platform, which owns recurrence and delivery even
-after the WebView is backgrounded or killed.
+after the WebView is backgrounded or killed. Schedule sync never requests
+subscription or system permission; authorization remains an explicit,
+user-initiated operation.
 
 In a plain browser (no host), subscription methods resolve
-`{ subscribed: false }` and `syncSchedules` resolves
+`{ subscribed: false, systemPermission: "unavailable" }` and `syncSchedules` resolves
 `{ synced: false, scheduledCount: 0, permissionGranted: false }`, so apps can
 render the right UI during local development without special-casing.
 

@@ -4,7 +4,7 @@ import { notifications } from "../internal/capabilities/notifications";
 import {
   CHANNEL,
   NOTIFICATIONS_IS_SUBSCRIBED,
-  NOTIFICATIONS_SUBSCRIBE,
+  NOTIFICATIONS_REQUEST_SUBSCRIPTION,
   NOTIFICATIONS_SYNC_SCHEDULES,
   NOTIFICATIONS_UNSUBSCRIBE,
   VERSION,
@@ -52,16 +52,23 @@ describe("notifications — mobile bridge path", () => {
     removeRN();
   });
 
-  it("subscribe forwards an RPC and resolves with the host's subscribed state", async () => {
-    const promise = notifications.subscribe();
+  it("requestSubscription asks the host for authorization and returns its permission state", async () => {
+    const promise = notifications.requestSubscription();
 
     await new Promise((r) => setTimeout(r, 10));
-    dispatchHello(["notifications.subscribe", "notifications.unsubscribe", "notifications.isSubscribed"]);
+    dispatchHello([
+      "notifications.requestSubscription",
+      "notifications.unsubscribe",
+      "notifications.isSubscribed",
+    ]);
     await new Promise((r) => setTimeout(r, 20));
 
     const reqEnvelope = sent
       .map((s) => JSON.parse(s) as Record<string, unknown>)
-      .find((env) => env.t === "req" && env.fn === NOTIFICATIONS_SUBSCRIBE);
+      .find(
+        (env) =>
+          env.t === "req" && env.fn === NOTIFICATIONS_REQUEST_SUBSCRIPTION,
+      );
     expect(reqEnvelope).toBeDefined();
 
     __dispatchHostMessage({
@@ -70,18 +77,50 @@ describe("notifications — mobile bridge path", () => {
       t: "res",
       id: reqEnvelope?.id,
       ok: true,
-      data: { subscribed: true },
+      data: { subscribed: true, systemPermission: "granted" },
     });
 
     const result = await promise;
-    expect(result).toEqual({ subscribed: true });
+    expect(result).toEqual({
+      subscribed: true,
+      systemPermission: "granted",
+    });
   });
 
-  it("unsubscribe forwards an RPC", async () => {
+  it("subscribe is a legacy alias for the requestSubscription RPC", async () => {
+    const promise = notifications.subscribe();
+
+    await new Promise((r) => setTimeout(r, 10));
+    dispatchHello(["notifications.requestSubscription"]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const requests = sent
+      .map((s) => JSON.parse(s) as Record<string, unknown>)
+      .filter((env) => env.t === "req");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.fn).toBe(NOTIFICATIONS_REQUEST_SUBSCRIPTION);
+    expect(requests[0]?.fn).not.toBe("notifications.subscribe");
+
+    __dispatchHostMessage({
+      ch: CHANNEL,
+      v: VERSION,
+      t: "res",
+      id: requests[0]?.id,
+      ok: true,
+      data: { subscribed: false, systemPermission: "denied" },
+    });
+
+    await expect(promise).resolves.toEqual({
+      subscribed: false,
+      systemPermission: "denied",
+    });
+  });
+
+  it("unsubscribe returns the host's resulting subscription and permission state", async () => {
     const promise = notifications.unsubscribe();
 
     await new Promise((r) => setTimeout(r, 10));
-    dispatchHello(["notifications.subscribe", "notifications.unsubscribe", "notifications.isSubscribed"]);
+    dispatchHello(["notifications.unsubscribe"]);
     await new Promise((r) => setTimeout(r, 20));
 
     const reqEnvelope = sent
@@ -95,23 +134,33 @@ describe("notifications — mobile bridge path", () => {
       t: "res",
       id: reqEnvelope?.id,
       ok: true,
-      data: { subscribed: false },
+      data: { subscribed: true, systemPermission: "blocked" },
     });
 
     const result = await promise;
-    expect(result).toEqual({ subscribed: false });
+    expect(result).toEqual({
+      subscribed: true,
+      systemPermission: "blocked",
+    });
   });
 
-  it("isSubscribed forwards an RPC", async () => {
+  it("isSubscribed uses only its read-only RPC", async () => {
     const promise = notifications.isSubscribed();
 
     await new Promise((r) => setTimeout(r, 10));
-    dispatchHello(["notifications.subscribe", "notifications.unsubscribe", "notifications.isSubscribed"]);
+    dispatchHello([
+      "notifications.requestSubscription",
+      "notifications.isSubscribed",
+    ]);
     await new Promise((r) => setTimeout(r, 20));
 
-    const reqEnvelope = sent
+    const requests = sent
       .map((s) => JSON.parse(s) as Record<string, unknown>)
-      .find((env) => env.t === "req" && env.fn === NOTIFICATIONS_IS_SUBSCRIBED);
+      .filter((env) => env.t === "req");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.fn).toBe(NOTIFICATIONS_IS_SUBSCRIBED);
+
+    const reqEnvelope = requests[0];
     expect(reqEnvelope).toBeDefined();
 
     __dispatchHostMessage({
@@ -120,10 +169,13 @@ describe("notifications — mobile bridge path", () => {
       t: "res",
       id: reqEnvelope?.id,
       ok: true,
-      data: { subscribed: true },
+      data: { subscribed: true, systemPermission: "granted" },
     });
 
-    expect(await promise).toEqual({ subscribed: true });
+    expect(await promise).toEqual({
+      subscribed: true,
+      systemPermission: "granted",
+    });
   });
 
   it("syncSchedules forwards a replace-style RPC and normalizes the host result", async () => {
@@ -142,6 +194,15 @@ describe("notifications — mobile bridge path", () => {
       .map((s) => JSON.parse(s) as Record<string, unknown>)
       .find((env) => env.t === "req" && env.fn === NOTIFICATIONS_SYNC_SCHEDULES);
     expect(reqEnvelope).toBeDefined();
+    expect(
+      sent
+        .map((s) => JSON.parse(s) as Record<string, unknown>)
+        .some(
+          (env) =>
+            env.t === "req" &&
+            env.fn === NOTIFICATIONS_REQUEST_SUBSCRIPTION,
+        ),
+    ).toBe(false);
     expect(reqEnvelope?.args).toEqual({
       replace: true,
       title: "Hydration",
@@ -180,15 +241,18 @@ describe("notifications — mobile bridge path", () => {
     });
   });
 
-  it("falls back to { subscribed: false } when the host advertises no capability", async () => {
-    const promise = notifications.subscribe();
+  it("returns unavailable when the host cannot request a subscription", async () => {
+    const promise = notifications.requestSubscription();
 
     await new Promise((r) => setTimeout(r, 10));
     dispatchHello([]); // host doesn't advertise notifications.*
     await new Promise((r) => setTimeout(r, 20));
 
     const result = await promise;
-    expect(result).toEqual({ subscribed: false });
+    expect(result).toEqual({
+      subscribed: false,
+      systemPermission: "unavailable",
+    });
   });
 });
 
@@ -202,12 +266,15 @@ describe("notifications — pure web path", () => {
     __resetSDK();
   });
 
-  it("resolves { subscribed: false } when no host responds within hello timeout", async () => {
-    const promise = notifications.subscribe();
+  it("reports subscription authorization as unavailable without a host", async () => {
+    const promise = notifications.requestSubscription();
     // Wait past HELLO_TIMEOUT_MS (1500ms) so waitForBootstrap resolves null.
     await new Promise((r) => setTimeout(r, 1700));
     const result = await promise;
-    expect(result).toEqual({ subscribed: false });
+    expect(result).toEqual({
+      subscribed: false,
+      systemPermission: "unavailable",
+    });
   });
 
   it("resolves an unsynced schedule result when no host responds", async () => {

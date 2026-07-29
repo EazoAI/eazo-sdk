@@ -14,7 +14,8 @@ export const AUTH_LOGIN_CANCELLED_EVENT = "auth.loginCancelled";
 export const DEVICE_CHANGED_EVENT = "device.changed";
 export const SHARE_COMPOSE = "share.compose";
 export const MEMORY_REPORT_ACTION = "memory.reportAction";
-export const NOTIFICATIONS_SUBSCRIBE = "notifications.subscribe";
+export const NOTIFICATIONS_REQUEST_SUBSCRIPTION =
+  "notifications.requestSubscription";
 export const NOTIFICATIONS_UNSUBSCRIBE = "notifications.unsubscribe";
 export const NOTIFICATIONS_IS_SUBSCRIBED = "notifications.isSubscribed";
 export const NOTIFICATIONS_SYNC_SCHEDULES = "notifications.syncSchedules";
