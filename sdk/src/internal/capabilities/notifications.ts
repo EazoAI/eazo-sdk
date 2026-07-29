@@ -80,8 +80,8 @@ export type NotificationsSubscriptionResult = {
   /**
    * Whether the current user is subscribed to push notifications from this
    * app *after* the call resolves. On the mobile path this reflects the
-   * `apps_user.flags & APP_FLAG_SUBSCRIBED_PUSH` bit. On the plain-web path
-   * (no host) the SDK returns `false` and does not throw.
+   * Host-owned per-user, per-App authorization state. On the plain-web path
+   * (no Host) the SDK returns `false` and does not throw.
    */
   subscribed: boolean;
   /** Current OS-level notification permission reported by the host. */
@@ -89,19 +89,16 @@ export type NotificationsSubscriptionResult = {
 };
 
 /**
- * Per-app push-notification subscription, mediated by the host. The mobile
- * shell (or any host that advertises the `notifications.*` capability) maps
- * these calls onto its `apps-user/toggle-flag` + `apps-user/action/:id`
- * endpoints; the SDK never talks to the platform directly here. That keeps
- * the trust model identical to the existing favorite/like/comment toggles —
- * the host knows which app the user is currently inside and which user is
- * signed in, neither needs to be re-asserted by the embedded app.
+ * Per-app push-notification authorization, mediated by the Host. The Host
+ * derives the current app and signed-in user from its trusted App context and
+ * owns the authorization state and any permission UI. The embedded app does
+ * not re-assert either identity or talk to the platform directly here.
  *
  * **Backend publishing** (the path that actually delivers a notification to
  * users) is a different surface — see `@eazo/sdk/server`'s
  * `notifications.publish(...)`. That helper is the one the app's serverless
  * handler calls (signed with `EAZO_PRIVATE_KEY`) when something interesting
- * happens; subscribed users then receive an Expo system push.
+ * happens; authorized subscribers then receive a system push.
  */
 export const notifications = {
   /** Returns the current subscription state without changing it. */

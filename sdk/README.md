@@ -210,23 +210,45 @@ Requires `EAZO_PRIVATE_KEY` in the server environment.
 <a id="server-notifications-publish"></a>
 #### `notifications.publish`
 
-Send a system push to every user subscribed to your app. Authenticates by signing an ES256K JWT with `EAZO_PRIVATE_KEY` — there is no user JWT in scope, so this is the right path for cron-driven digests, event-driven alerts, or any backend-originated notification.
+Send a system push to your app's authorized subscribers. Authenticates by
+signing an ES256K JWT with `EAZO_PRIVATE_KEY` — there is no user JWT in scope,
+so this is the right path for cron-driven digests, event-driven alerts, or any
+backend-originated notification.
 
 ```ts
 import { notifications } from "@eazo/sdk/server";
 
 export async function POST() {
+  // Omitting audience broadcasts to every authorized subscriber.
   const { delivered, publishId } = await notifications.publish({
     title: "Slow-cooker timer",
     body: "Your stew is ready.",
-    data: { recipeId: "stew-42" },           // optional, surfaces in the device tap handler
+    data: { recipeId: "stew-42" },
+    dedupeKey: "recipe-ready:stew-42",
   });
   return Response.json({ delivered, publishId });
 }
 ```
 
-`audience` is `"subscribers"` (v1's only supported value). Server publish
-cannot target arbitrary user IDs.
+Set `audience: "subscribers"` explicitly or omit it to broadcast. To target a
+subset, pass 1–500 user IDs:
+
+```ts
+await notifications.publish({
+  title: "New assignment",
+  body: "A task was assigned to you.",
+  audience: { userIds: ["user_123", "user_456"] },
+  dedupeKey: "task-assigned:task_42",
+});
+```
+
+Targeted IDs are intersected with the app's authorized subscriber set. Listing
+a user never overrides their notification authorization; unauthorized IDs are
+silently excluded from `delivered`.
+
+`dedupeKey` is optional and accepts up to 120 letters, digits, `:`, `_`, `-`,
+or `.` characters. Reusing the same key suppresses repeat inserts for
+recipients already notified under that logical send.
 
 Throws `EazoNotificationPublishError` on platform-level errors (`code` 401 = bad JWT, 403 = appId doesn't belong to your key, 413 = >5,000 subscribers, etc.).
 

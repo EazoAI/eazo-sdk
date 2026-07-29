@@ -178,6 +178,42 @@ describe("notifications — mobile bridge path", () => {
     });
   });
 
+  it.each([
+    ["missing", { subscribed: true }],
+    ["unknown", { subscribed: true, systemPermission: "prompt" }],
+  ])(
+    "normalizes a %s systemPermission to unavailable",
+    async (_label, hostResult) => {
+      const promise = notifications.isSubscribed();
+
+      await new Promise((r) => setTimeout(r, 10));
+      dispatchHello(["notifications.isSubscribed"]);
+      await new Promise((r) => setTimeout(r, 20));
+
+      const reqEnvelope = sent
+        .map((s) => JSON.parse(s) as Record<string, unknown>)
+        .find(
+          (env) =>
+            env.t === "req" && env.fn === NOTIFICATIONS_IS_SUBSCRIBED,
+        );
+      expect(reqEnvelope).toBeDefined();
+
+      __dispatchHostMessage({
+        ch: CHANNEL,
+        v: VERSION,
+        t: "res",
+        id: reqEnvelope?.id,
+        ok: true,
+        data: hostResult,
+      });
+
+      await expect(promise).resolves.toEqual({
+        subscribed: true,
+        systemPermission: "unavailable",
+      });
+    },
+  );
+
   it("syncSchedules forwards a replace-style RPC and normalizes the host result", async () => {
     const promise = notifications.syncSchedules({
       title: "Hydration",

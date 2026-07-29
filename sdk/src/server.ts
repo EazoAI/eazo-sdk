@@ -135,10 +135,11 @@ function getDeveloperAppId(): string {
 
 /**
  * Recipient set for a publish. `"subscribers"` (default) broadcasts to every
- * user with this app's subscribe bit; `{ userIds }` targets specific users
- * (1–500 ids per call). Targeted lists are intersected with the subscriber
- * set on the platform — nominating a user never overrides their opt-in, and
- * ids that aren't subscribed are silently dropped (reflected in `delivered`).
+ * user with enabled notification authorization for this app; `{ userIds }`
+ * targets specific users (1–500 ids per call). Targeted lists are intersected
+ * with the authorized subscriber set on the platform — nominating a user
+ * never overrides their authorization, and unauthorized ids are silently
+ * dropped (reflected in `delivered`).
  */
 export type NotificationPublishAudience =
   | "subscribers"
@@ -168,8 +169,8 @@ export interface NotificationPublishResult {
 }
 
 /**
- * Server-side publish to subscribers of this app. Signs a JWT with
- * `EAZO_PRIVATE_KEY` and POSTs to the platform; throws
+ * Server-side publish to authorized subscribers of this app. Signs a JWT
+ * with `EAZO_PRIVATE_KEY` and POSTs to the platform; throws
  * `EazoNotificationPublishError` on non-zero response codes.
  */
 export const notifications = {
