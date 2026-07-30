@@ -162,7 +162,9 @@ await notifications.syncSchedules({
 Call `requestSubscription()` only from a direct user action. The Host owns any
 in-app confirmation and system-permission UI, then returns the resulting
 `subscribed` and `systemPermission` state. The legacy `subscribe()` method is a
-deprecated alias that uses this same authorization request.
+deprecated alias that uses this same authorization request. This interactive
+RPC can remain pending for up to 5 minutes while the user handles Host and
+system UI; ordinary bridge RPCs retain the 10-second timeout.
 
 `syncSchedules` is replace-style: omitted IDs are removed and an empty
 `schedules` array clears the app's reminders. Times use the user's local wall

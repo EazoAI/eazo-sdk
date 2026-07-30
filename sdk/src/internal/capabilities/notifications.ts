@@ -7,6 +7,8 @@ import {
   NOTIFICATIONS_UNSUBSCRIBE,
 } from "../bridge/protocol";
 
+const REQUEST_SUBSCRIPTION_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * A fixed-time reminder: fires at `time` (local `HH:mm`) every day, or only
  * on the given ISO weekdays (`1` = Monday … `7` = Sunday).
@@ -111,7 +113,9 @@ export const notifications = {
    * from a direct user action; the host owns permission and confirmation UI.
    */
   async requestSubscription(): Promise<NotificationsSubscriptionResult> {
-    return invoke(NOTIFICATIONS_REQUEST_SUBSCRIPTION);
+    return invoke(NOTIFICATIONS_REQUEST_SUBSCRIPTION, {
+      timeoutMs: REQUEST_SUBSCRIPTION_TIMEOUT_MS,
+    });
   },
 
   /**
@@ -177,7 +181,10 @@ export const notifications = {
   },
 };
 
-async function invoke(fn: string): Promise<NotificationsSubscriptionResult> {
+async function invoke(
+  fn: string,
+  options: { timeoutMs?: number } = {},
+): Promise<NotificationsSubscriptionResult> {
   const fallback: NotificationsSubscriptionResult = {
     subscribed: false,
     systemPermission: "unavailable",
@@ -186,7 +193,11 @@ async function invoke(fn: string): Promise<NotificationsSubscriptionResult> {
   const bridge = getBridge();
   if (hello && bridge?.getStatus().ready) {
     try {
-      const result = await bridge.request<NotificationsSubscriptionResult>(fn);
+      const result = await bridge.request<NotificationsSubscriptionResult>(
+        fn,
+        undefined,
+        options,
+      );
       return {
         subscribed: !!result?.subscribed,
         systemPermission: normalizeSystemPermission(result?.systemPermission),

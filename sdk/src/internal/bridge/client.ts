@@ -31,6 +31,10 @@ export interface BridgeStatus {
   capabilities: string[];
 }
 
+export interface BridgeRequestOptions {
+  timeoutMs?: number;
+}
+
 /**
  * Bridge client — manages handshake, RPC, and events.
  *
@@ -122,7 +126,11 @@ export class BridgeClient {
     };
   }
 
-  request<T = unknown>(fn: string, args?: unknown): Promise<T> {
+  request<T = unknown>(
+    fn: string,
+    args?: unknown,
+    options: BridgeRequestOptions = {},
+  ): Promise<T> {
     if (!this.helloReceived) {
       return Promise.reject(
         new BridgeErrorObject("NOT_SUPPORTED", `Host not available (fn=${fn})`),
@@ -142,7 +150,7 @@ export class BridgeClient {
         if (this.pending.delete(id)) {
           reject(new BridgeErrorObject("TIMEOUT", `Bridge request ${fn} timed out`));
         }
-      }, REQUEST_TIMEOUT_MS);
+      }, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
       this.pending.set(id, {
         resolve: (data) => resolve(data as T),

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { notifications } from "../internal/capabilities/notifications";
 import {
@@ -85,6 +85,58 @@ describe("notifications — mobile bridge path", () => {
       subscribed: true,
       systemPermission: "granted",
     });
+  });
+
+  it("keeps requestSubscription pending beyond the ordinary 10-second RPC timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = notifications.requestSubscription();
+      dispatchHello(["notifications.requestSubscription"]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const reqEnvelope = sent
+        .map((s) => JSON.parse(s) as Record<string, unknown>)
+        .find(
+          (env) =>
+            env.t === "req" && env.fn === NOTIFICATIONS_REQUEST_SUBSCRIPTION,
+        );
+      expect(reqEnvelope).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      __dispatchHostMessage({
+        ch: CHANNEL,
+        v: VERSION,
+        t: "res",
+        id: reqEnvelope?.id,
+        ok: true,
+        data: { subscribed: true, systemPermission: "granted" },
+      });
+
+      await expect(promise).resolves.toEqual({
+        subscribed: true,
+        systemPermission: "granted",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the ordinary 10-second timeout for non-interactive notification RPCs", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = notifications.isSubscribed();
+      dispatchHello(["notifications.isSubscribed"]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).resolves.toEqual({
+        subscribed: false,
+        systemPermission: "unavailable",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("subscribe is a legacy alias for the requestSubscription RPC", async () => {
