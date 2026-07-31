@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The center handoff modal no longer pops.** Web pages now get the top
-  banner only — no full-screen scrim, no center modal. The modal's code
-  (`Overlay`, `Orbit`, and its CSS) is kept in place behind a
-  `MODAL_ENABLED` switch in `banner-ui/index.tsx` so it can be turned back
-  on without a rewrite.
+- **Web handoff banner disabled for creator-deployed apps.** `<EazoProvider>`
+  no longer mounts the top Eazo promo banner (or its center handoff modal) on
+  plain-web hosts. Login UI and the share-download modal still render on web;
+  mobile WebView and iframe behaviour is unchanged. The `.eazo-app-area`
+  wrapper stays in the tree but no longer activates the legacy
+  `html.eazo-host-web` scroll containment model, so host pages use the normal
+  document scroll model again. Supersedes the earlier `MODAL_ENABLED` switch,
+  which only hid the center modal while keeping the top banner.
 
 ## [0.21.0] - 2026-06-11
 
