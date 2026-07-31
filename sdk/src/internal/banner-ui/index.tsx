@@ -61,6 +61,14 @@ function formatStat(n: number | undefined): string {
   return `${(n / 1_000_000).toFixed(1)}m`;
 }
 
+function resolveRemixFallbackUrl(): string {
+  const url = new URL(REMIX_FALLBACK_URL);
+  url.searchParams.set("intent", "remix");
+  const appId = getAppId()?.trim();
+  if (appId) url.searchParams.set("source_app_id", appId);
+  return url.toString();
+}
+
 /**
  * True when the string is shaped like a URL pointing at an image — covers
  * the forms `creator_apps.icon` may carry: absolute http(s) URLs,
@@ -344,12 +352,16 @@ function TopBanner({
   info,
   loading,
 }: TopBannerProps): React.ReactElement {
-  // Remix targets the same `eazo://app/<appId>` deep link as the
-  // "Open in Eazo" CTA (the Remix vs Open intent split is the host app's
-  // job to read from the URL), but when the app doesn't open it falls
-  // back to the web creator portal instead of the store / marketing site.
+  // Remix keeps the app-specific destination used by "Open in Eazo" and
+  // adds an explicit intent. Mobile consumes it after the app detail loads;
+  // desktop and app-not-installed flows land on Creator's existing chat
+  // page with the same source app bound in the fallback query.
   const remixCta = React.useMemo(
-    () => resolveBannerCta({ fallbackUrl: REMIX_FALLBACK_URL }),
+    () =>
+      resolveBannerCta({
+        fallbackUrl: resolveRemixFallbackUrl(),
+        query: { intent: "remix" },
+      }),
     [],
   );
   const onRemixClick = React.useMemo(
