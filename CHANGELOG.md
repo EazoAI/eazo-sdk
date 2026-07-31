@@ -9,14 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Web handoff banner disabled for creator-deployed apps.** `<EazoProvider>`
-  no longer mounts the top Eazo promo banner (or its center handoff modal) on
-  plain-web hosts. Login UI and the share-download modal still render on web;
-  mobile WebView and iframe behaviour is unchanged. The `.eazo-app-area`
-  wrapper stays in the tree but no longer activates the legacy
-  `html.eazo-host-web` scroll containment model, so host pages use the normal
-  document scroll model again. Supersedes the earlier `MODAL_ENABLED` switch,
-  which only hid the center modal while keeping the top banner.
+- **Restored the top web handoff banner.** `<EazoProvider>` mounts
+  `<EazoBrandBanner />` again on plain-web hosts. The center handoff modal
+  remains disabled (`MODAL_ENABLED=false`); only the single top strip renders.
+  SSR prefetch of `PublicAppInfo` is restored so the banner can paint real app
+  identity on first frame. Mobile WebView and iframe behaviour is unchanged.
 
 ## [0.21.0] - 2026-06-11
 

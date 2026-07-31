@@ -22,8 +22,8 @@ import type { EazoState } from "./types";
  * `VITE_EAZO_APP_ID`, etc.
  *
  * Under Next.js App Router this resolves to the server variant
- * (`react.server.tsx`), which reads env on the server and forwards
- * everything to the runtime via internal props.
+ * (`react.server.tsx`), which prefetches the handoff `PublicAppInfo`
+ * during SSR and forwards everything to the runtime via internal props.
  */
 export function EazoProvider({
   children,
