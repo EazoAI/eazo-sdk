@@ -77,40 +77,13 @@ export function _EazoRuntimeProvider(props: {
        *     .eazo-app-area-scroller   ← inner: scroll container (overflow:auto)
        *       {host children}
        *
-       * On plain web (where the banners actually render), `<html>` gets
-       * the `eazo-host-web` class and both layers receive their active
-       * styles:
-       *   - outer: `position: fixed` + `transform: translateZ(0)` — the
-       *     containing block for host's `position: fixed` descendants,
-       *     positioned inside the inter-banner gap.
-       *   - inner: `position: absolute; inset: 0; overflow: auto` — the
-       *     actual scroll container. No `transform`, so it does NOT
-       *     reparent fixed descendants; those resolve up to the outer
-       *     and stay visually pinned during scroll.
-       *
-       * Why TWO layers, not one: a single element that combines
-       * `transform: translateZ(0)` AND `overflow: auto` makes browsers
-       * translate fixed descendants by the wrapper's scroll offset —
-       * sticky CTAs end up scrolling with content instead of staying
-       * pinned. Splitting the responsibilities fixes that.
+       * On plain web (where the top banner renders), `<html>` gets the
+       * `eazo-host-web` class and both layers receive their active styles.
+       * The center handoff modal stays disabled via `MODAL_ENABLED=false`
+       * inside `EazoBrandBanner` — only the top strip is shown.
        *
        * In mobile WebView / iframe the `eazo-host-web` class is never
-       * added; both layers fall back to `display: contents`, which
-       * REMOVES their boxes from layout entirely. Host children
-       * participate in the grandparent's layout context as if the
-       * wrapper elements didn't exist — no containing block, no scroll
-       * container, no `window.scrollY` redirection, no `position: fixed`
-       * reparenting. The wrapper is fully transparent to mobile/iframe
-       * hosts; the React tree just carries two extra elements that
-       * generate no boxes.
-       *
-       * BREAKING semantics on PLAIN WEB (also in CHANGELOG):
-       *   - `window.scrollY` / `window` scroll events no longer reflect
-       *     host content scrolling — read from `.eazo-app-area-scroller`.
-       *   - `document.body { overflow: hidden }` no longer locks scroll;
-       *     body-scroll-lock libraries must target the scroller.
-       *   - Host modals at `position: fixed; inset: 0` are contained to
-       *     the outer wrapper rather than covering the full viewport.
+       * added; both layers fall back to `display: contents`.
        */}
       <div className="eazo-app-area">
         <div className="eazo-app-area-scroller">{props.children}</div>

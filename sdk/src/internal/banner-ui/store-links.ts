@@ -47,6 +47,23 @@ export interface BannerCta {
   needsTimeoutFallback: boolean;
 }
 
+export interface BannerCtaOptions {
+  fallbackUrl?: string;
+  query?: Readonly<Record<string, string | null | undefined>>;
+}
+
+function buildBannerQuery(
+  extra: BannerCtaOptions["query"],
+): string {
+  const params = new URLSearchParams(buildShareAttributionQuery().replace(/^\?/, ""));
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    const normalized = value?.trim();
+    if (normalized) params.set(key, normalized);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 /**
  * Per-platform plan for the banner CTA. Uses Eazo Mobile's registered
  * custom scheme `eazo://` (declared in `eazo-mobile/app.json#scheme`),
@@ -76,7 +93,7 @@ export interface BannerCta {
  * site. The "Remix" CTA passes the creator portal here, for example.
  */
 export function resolveBannerCta(
-  options: { fallbackUrl?: string } = {},
+  options: BannerCtaOptions = {},
 ): BannerCta {
   const fallbackUrl = options.fallbackUrl
     ? appendCurrentShareAttribution(options.fallbackUrl)
@@ -87,7 +104,7 @@ export function resolveBannerCta(
   }
   const platform = detectPlatform(navigator.userAgent);
   const appId = getAppId();
-  const query = buildShareAttributionQuery();
+  const query = buildBannerQuery(options.query);
   const path = appId ? `app/${encodeURIComponent(appId)}${query}` : query;
   if (platform === "ios") {
     const storeUrl = fallbackUrl ?? appendCurrentShareAttribution(APP_STORE_URL);

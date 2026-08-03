@@ -6,8 +6,8 @@
 //   1. Read `EAZO_APP_ID` and `EAZO_PLATFORM_API_BASE` from env and
 //      forward them to the runtime provider via internal props, since
 //      Next.js doesn't inline non-`NEXT_PUBLIC_*` envs into the client.
-//   2. Prefetch `PublicAppInfo` so the handoff overlay paints real
-//      content on first frame.
+//   2. Prefetch `PublicAppInfo` so the top banner paints real content
+//      on first frame.
 
 import * as React from "react";
 
@@ -59,8 +59,8 @@ export async function EazoProvider({
   }
   const apiBase = readApiBaseFromEnv();
 
-  // Skip the prefetch inside Eazo Mobile WebView — the handoff overlay
-  // is `getHost()`-gated and never renders there.
+  // Skip the prefetch inside Eazo Mobile WebView — the handoff banner is
+  // `getHost()`-gated and never renders there.
   let initialAppInfo: import("./internal/banner-ui/app-info").PublicAppInfo | null = null;
   const ua = await getRequestUserAgent();
   if (!isMobileWebViewUserAgent(ua)) {

@@ -82,25 +82,52 @@ describe("share attribution handoff", () => {
   });
 
   it("appends attribution to iOS deeplink and fallback URL", () => {
-    const cta = resolveBannerCta({ fallbackUrl: "https://creator.eazo.ai/" });
+    const cta = resolveBannerCta({
+      fallbackUrl:
+        "https://creator.eazo.ai/?intent=remix&source_app_id=app_123",
+      query: { intent: "remix" },
+    });
 
     expect(cta.href).toContain("eazo://app/app_123?");
+    expect(cta.href).toContain("intent=remix");
     expect(cta.href).toContain("entry_source=share_link");
     expect(cta.href).toContain("share_channel=copy_link");
     expect(cta.href).toContain("product_name=creator_web");
     expect(cta.storeUrl).toContain("https://creator.eazo.ai/");
+    expect(cta.storeUrl).toContain("intent=remix");
+    expect(cta.storeUrl).toContain("source_app_id=app_123");
     expect(cta.storeUrl).toContain("entry_source_id=shr_123");
   });
 
   it("appends attribution to Android intent fallback", () => {
     setUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8)");
 
-    const cta = resolveBannerCta({ fallbackUrl: "https://creator.eazo.ai/" });
+    const cta = resolveBannerCta({
+      fallbackUrl:
+        "https://creator.eazo.ai/?intent=remix&source_app_id=app_123",
+      query: { intent: "remix" },
+    });
 
     expect(cta.href).toContain("intent://app/app_123?");
+    expect(cta.href).toContain("intent=remix");
     expect(cta.href).toContain("entry_source=share_link");
     expect(decodeURIComponent(cta.href)).toContain(
-      "S.browser_fallback_url=https://creator.eazo.ai/?entry_source=share_link",
+      "S.browser_fallback_url=https://creator.eazo.ai/?intent=remix&source_app_id=app_123",
+    );
+  });
+
+  it("adds explicit CTA query parameters without share attribution", () => {
+    setUrl("/");
+
+    const cta = resolveBannerCta({
+      fallbackUrl:
+        "https://creator.eazo.ai/?intent=remix&source_app_id=app_123",
+      query: { intent: "remix" },
+    });
+
+    expect(cta.href).toBe("eazo://app/app_123?intent=remix");
+    expect(cta.storeUrl).toBe(
+      "https://creator.eazo.ai/?intent=remix&source_app_id=app_123",
     );
   });
 

@@ -29,6 +29,9 @@ import { __resetSDK } from "../testing";
  *
  *   5. `<html>` itself sees no class, padding, or CSS-var pollution in
  *      mobile/iframe hosts.
+ *
+ *   6. On plain-web, the top banner renders but the center handoff modal
+ *      stays disabled (`MODAL_ENABLED=false`).
  */
 
 interface RNGlobal {
@@ -177,6 +180,23 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     // Sanity: it's a <style> with the expected marker attribute.
     expect(styleTag?.tagName).toBe("STYLE");
     expect(styleTag?.getAttribute("data-eazo-sdk")).toBe("banner-ui");
+    unmount();
+  });
+
+  it("mounts the top banner but NOT the center handoff modal on plain-web hosts", async () => {
+    removeRN();
+    const { container, unmount } = render(
+      <EazoProvider>
+        <span data-testid="host-child" />
+      </EazoProvider>,
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(container.querySelector(".eazo-handoff-root")).not.toBeNull();
+    expect(container.querySelector(".eazo-banner-root")).not.toBeNull();
+    expect(container.querySelector(".eazo-handoff-overlay")).toBeNull();
+    expect(container.querySelector(".eazo-modal")).toBeNull();
     unmount();
   });
 
