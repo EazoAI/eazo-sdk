@@ -13,10 +13,10 @@ import { __resetSDK } from "../testing";
  *      ALWAYS renders — both layers — so SSR/CSR markup is identical
  *      across hosts and there's no hydration mismatch.
  *
- *   2. The styles that ACTIVATE the wrapper (position: fixed, transform,
- *      overflow: auto) only apply under `html.eazo-host-web`, which
- *      banner-ui adds on mount only in plain-web hosts. Default state is
- *      `display: contents` — the wrapper boxes disappear from layout.
+ *   2. Outside plain web, the wrappers provide one definite viewport-height
+ *      chain without taking over scrolling. This keeps `height: 100%` app
+ *      roots visible even when the host body only has `min-height: 100%`.
+ *      Plain web replaces that baseline with the banner-safe fixed area.
  *
  *   3. Banner-related React components (`<EazoBrandBanner />`,
  *      `<LoginUI />`, `<ShareDownloadModal />`) are NOT mounted in
@@ -163,7 +163,7 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     unmount();
   });
 
-  it("keeps both wrapper layers layout-neutral in the mobile WebView without injecting banner UI CSS", async () => {
+  it("gives percentage-height apps a definite mobile viewport without taking over scrolling", async () => {
     installRN();
     const { container, unmount } = render(
       <EazoProvider>
@@ -173,19 +173,23 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    // The all-host wrapper stylesheet must apply, while the web banner
-    // stylesheet remains absent.
+    // The all-host wrapper stylesheet must establish a definite height
+    // chain, while the web banner stylesheet remains absent.
     expect(document.getElementById("eazo-sdk-banner-ui")).toBeNull();
+    const appAreaStyle = document.getElementById("eazo-sdk-app-area");
     const outer = container.querySelector(".eazo-app-area");
     const scroller = container.querySelector(".eazo-app-area-scroller");
     expect(outer).not.toBeNull();
     expect(scroller).not.toBeNull();
-    expect(window.getComputedStyle(outer as Element).display).toBe("contents");
-    expect(window.getComputedStyle(scroller as Element).display).toBe("contents");
+    expect(appAreaStyle?.textContent).toContain("height: 100dvh");
+    expect(appAreaStyle?.textContent).toContain("flex: 0 0 auto");
+    expect(appAreaStyle?.textContent).toContain("overflow: visible");
+    expect(window.getComputedStyle(outer as Element).display).toBe("block");
+    expect(window.getComputedStyle(scroller as Element).display).toBe("block");
     unmount();
   });
 
-  it("keeps both wrapper layers layout-neutral in an iframe without injecting banner UI CSS", async () => {
+  it("gives iframe apps the same definite viewport-height chain", async () => {
     installIframe();
     const { container, unmount } = render(
       <EazoProvider>
@@ -200,8 +204,11 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     const scroller = container.querySelector(".eazo-app-area-scroller");
     expect(outer).not.toBeNull();
     expect(scroller).not.toBeNull();
-    expect(window.getComputedStyle(outer as Element).display).toBe("contents");
-    expect(window.getComputedStyle(scroller as Element).display).toBe("contents");
+    expect(window.getComputedStyle(outer as Element).display).toBe("block");
+    expect(window.getComputedStyle(scroller as Element).display).toBe("block");
+    expect(document.getElementById("eazo-sdk-app-area")?.textContent).toContain(
+      "height: 100dvh",
+    );
     expect(document.getElementById("eazo-sdk-banner-ui")).toBeNull();
     expect(document.documentElement.classList.contains("eazo-host-web")).toBe(
       false,
@@ -245,6 +252,10 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     // Sanity: it's a <style> with the expected marker attribute.
     expect(styleTag?.tagName).toBe("STYLE");
     expect(styleTag?.getAttribute("data-eazo-sdk")).toBe("banner-ui");
+    // The mobile baseline has an explicit viewport height. Plain web must
+    // reset it so `inset` — not 100dvh — defines the area below the banner.
+    expect(styleTag?.textContent).toContain("height: auto");
+    expect(styleTag?.textContent).toContain("min-height: 0");
     const outer = container.querySelector(".eazo-app-area");
     const scroller = container.querySelector(".eazo-app-area-scroller");
     expect(window.getComputedStyle(outer as Element).display).toBe("block");

@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Prevented full-height apps from collapsing inside Eazo Mobile WebView and
-  iframe hosts.** The provider's always-rendered wrapper layers now receive
-  their layout-neutral `display: contents` CSS in SSR output instead of
-  depending on the plain-web-only banner stylesheet.
+  iframe hosts.** The provider's always-rendered wrapper layers now establish
+  a definite viewport-height chain in SSR output without taking over document
+  scrolling. This keeps percentage-height app roots visible even when the app
+  body only declares `min-height: 100%`.
 
 ### Changed
 
