@@ -10,6 +10,7 @@
 
 import * as React from "react";
 
+import { AppAreaStyles } from "./app-area-styles";
 import { EazoBrandBanner } from "./banner-ui";
 import type { PublicAppInfo } from "./banner-ui/app-info";
 import { setInitialAppInfo } from "./banner-ui/initial-info";
@@ -36,13 +37,8 @@ export function _EazoRuntimeProvider(props: {
   setHostApiBase(props.apiBase);
   setInitialAppInfo(props.initialAppInfo);
 
-  // Inject the banner-ui stylesheet eagerly (before EazoBrandBanner mounts)
-  // so the `.eazo-app-area` wrapper has its `display: contents`/active
-  // styles ready on first paint. Banner-ui re-injects the same sheet on
-  // its own mount; ensureBannerStylesInjected is idempotent via STYLE_ID.
-  // The function self-gates on `getHost() === "web"` internally, so in
-  // mobile WebView / iframe hosts this is a no-op — no banner CSS ever
-  // lands in `document.head`.
+  // Banner UI remains a client-only plain-web concern. The wrapper's neutral
+  // default is rendered below so it is already present in SSR output.
   if (typeof document !== "undefined") {
     ensureBannerStylesInjected();
   }
@@ -70,6 +66,7 @@ export function _EazoRuntimeProvider(props: {
 
   return (
     <MountedContext.Provider value={true}>
+      <AppAreaStyles />
       {/*
        * Wrap host children in a TWO-LAYER container:
        *

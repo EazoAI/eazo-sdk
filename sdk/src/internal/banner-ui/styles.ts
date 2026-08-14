@@ -88,24 +88,9 @@ export const BANNER_UI_CSS = `
  *      visually equivalent (the wrapper IS the safe-area box) but
  *      \`inset: 0\` no longer covers the banner area.
  */
-/* Default state for the two wrapper layers: \`display: contents\` makes
- * the wrapper boxes disappear from layout entirely. Their children
- * participate in the GRANDPARENT's layout context (i.e. directly in the
- * \`<body>\`'s flex column) as if the wrapper elements didn't exist.
- * With no generated box there's also no containing block for fixed
- * descendants — host's \`position: fixed; bottom: 0\` resolves all the
- * way up to the viewport, exactly as it would without the SDK present.
- *
- * This is the ONLY state the wrapper takes in mobile WebView / iframe
- * hosts: the banners aren't mounted, the wrapper has no job, so it
- * collapses to a layout no-op. \`html.eazo-host-web\` (added by banner-ui
- * on mount, only in plain web) overrides BOTH layers below to their
- * full active styles. */
-.eazo-app-area,
-.eazo-app-area-scroller {
-  display: contents;
-}
-
+/* The layout-neutral \`display: contents\` default lives in
+ * \`app-area-styles.ts\` because the wrapper markup exists in every host.
+ * This plain-web-only sheet contains only the active override. */
 html.eazo-host-web .eazo-app-area {
   display: block;
   position: fixed;

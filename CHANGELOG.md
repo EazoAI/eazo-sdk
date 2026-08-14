@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prevented full-height apps from collapsing inside Eazo Mobile WebView and
+  iframe hosts.** The provider's always-rendered wrapper layers now receive
+  their layout-neutral `display: contents` CSS in SSR output instead of
+  depending on the plain-web-only banner stylesheet.
+
 ### Changed
 
 - **Restored the top web handoff banner.** `<EazoProvider>` mounts

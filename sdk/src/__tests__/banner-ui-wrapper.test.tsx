@@ -1,4 +1,5 @@
 import { act, render } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { EazoProvider } from "../react";
@@ -48,11 +49,30 @@ function removeRN(): void {
   delete (globalThis.window as unknown as RNGlobal).ReactNativeWebView;
 }
 
+function installIframe(): void {
+  Object.defineProperty(window, "parent", {
+    configurable: true,
+    value: { postMessage: () => undefined },
+  });
+}
+
+function removeIframe(): void {
+  Object.defineProperty(window, "parent", {
+    configurable: true,
+    value: window,
+  });
+}
+
 // Drop any banner-CSS <style> tag a previous test/run may have left in
 // the document head — `ensureBannerStylesInjected` is idempotent, but
 // we need a clean slate to assert that mobile hosts truly DON'T inject.
 function removeBannerStyleTag(): void {
   const tag = document.getElementById("eazo-sdk-banner-ui");
+  if (tag) tag.remove();
+}
+
+function removeAppAreaStyleTag(): void {
+  const tag = document.getElementById("eazo-sdk-app-area");
   if (tag) tag.remove();
 }
 
@@ -67,15 +87,18 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     document.documentElement.classList.remove("eazo-host-web");
     document.documentElement.style.cssText = "";
     removeBannerStyleTag();
+    removeAppAreaStyleTag();
   });
 
   afterEach(() => {
     __resetSDK();
     delete process.env.EAZO_APP_ID;
     removeRN();
+    removeIframe();
     document.documentElement.classList.remove("eazo-host-web");
     document.documentElement.style.cssText = "";
     removeBannerStyleTag();
+    removeAppAreaStyleTag();
   });
 
   it("renders both wrapper layers around children regardless of host", () => {
@@ -102,6 +125,20 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     unmount();
   });
 
+  it("includes layout-neutral wrapper CSS in SSR markup before the wrappers", () => {
+    installRN();
+    const markup = renderToString(
+      <EazoProvider>
+        <div data-testid="host-child">hello</div>
+      </EazoProvider>,
+    );
+
+    const stylePosition = markup.indexOf('id="eazo-sdk-app-area"');
+    const wrapperPosition = markup.indexOf('class="eazo-app-area"');
+    expect(stylePosition).toBeGreaterThanOrEqual(0);
+    expect(wrapperPosition).toBeGreaterThan(stylePosition);
+  });
+
   it("does NOT set eazo-host-web on <html> in the mobile WebView host", async () => {
     installRN();
     const { unmount } = render(
@@ -126,9 +163,9 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     unmount();
   });
 
-  it("does NOT inject the banner-ui stylesheet into <head> in the mobile WebView host", async () => {
+  it("keeps both wrapper layers layout-neutral in the mobile WebView without injecting banner UI CSS", async () => {
     installRN();
-    const { unmount } = render(
+    const { container, unmount } = render(
       <EazoProvider>
         <span />
       </EazoProvider>,
@@ -136,11 +173,39 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    // ensureBannerStylesInjected() runs both in EazoProvider render
-    // AND in banner-ui's mount effect, but both paths self-gate on
-    // getHost() === "web". In the mobile host the <style> tag must
-    // never appear.
+    // The all-host wrapper stylesheet must apply, while the web banner
+    // stylesheet remains absent.
     expect(document.getElementById("eazo-sdk-banner-ui")).toBeNull();
+    const outer = container.querySelector(".eazo-app-area");
+    const scroller = container.querySelector(".eazo-app-area-scroller");
+    expect(outer).not.toBeNull();
+    expect(scroller).not.toBeNull();
+    expect(window.getComputedStyle(outer as Element).display).toBe("contents");
+    expect(window.getComputedStyle(scroller as Element).display).toBe("contents");
+    unmount();
+  });
+
+  it("keeps both wrapper layers layout-neutral in an iframe without injecting banner UI CSS", async () => {
+    installIframe();
+    const { container, unmount } = render(
+      <EazoProvider>
+        <span />
+      </EazoProvider>,
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    const outer = container.querySelector(".eazo-app-area");
+    const scroller = container.querySelector(".eazo-app-area-scroller");
+    expect(outer).not.toBeNull();
+    expect(scroller).not.toBeNull();
+    expect(window.getComputedStyle(outer as Element).display).toBe("contents");
+    expect(window.getComputedStyle(scroller as Element).display).toBe("contents");
+    expect(document.getElementById("eazo-sdk-banner-ui")).toBeNull();
+    expect(document.documentElement.classList.contains("eazo-host-web")).toBe(
+      false,
+    );
     unmount();
   });
 
@@ -167,7 +232,7 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
 
   it("DOES inject the banner-ui stylesheet into <head> on plain-web hosts", async () => {
     removeRN();
-    const { unmount } = render(
+    const { container, unmount } = render(
       <EazoProvider>
         <span />
       </EazoProvider>,
@@ -180,6 +245,14 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     // Sanity: it's a <style> with the expected marker attribute.
     expect(styleTag?.tagName).toBe("STYLE");
     expect(styleTag?.getAttribute("data-eazo-sdk")).toBe("banner-ui");
+    const outer = container.querySelector(".eazo-app-area");
+    const scroller = container.querySelector(".eazo-app-area-scroller");
+    expect(window.getComputedStyle(outer as Element).display).toBe("block");
+    expect(window.getComputedStyle(outer as Element).position).toBe("fixed");
+    expect(window.getComputedStyle(scroller as Element).display).toBe("block");
+    expect(window.getComputedStyle(scroller as Element).position).toBe(
+      "absolute",
+    );
     unmount();
   });
 
