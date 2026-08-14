@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The SDK no longer renders its own web→app handoff banner.**
+  `<EazoProvider>` stopped mounting `<EazoBrandBanner />`; branding is now
+  delivered by the hosted, framework-agnostic `eazo-brand-banner.js` drop-in
+  script that the app loads itself (e.g. via `next/script`). Because the SDK
+  banner was the only code that added the `eazo-host-web` class and the
+  `<html>` handoff padding / CSS vars, the SDK now leaves `<html>` untouched
+  and the `.eazo-app-area` wrapper stays a `display: contents` layout no-op in
+  every host — the drop-in script owns all banner spacing. `LoginUI`,
+  `ShareDownloadModal`, auth/device bootstrap, and mobile WebView / iframe
+  behaviour are unchanged. The `banner-ui` module (including `EazoBrandBanner`)
+  is kept in the source tree so the banner can be re-activated if needed.
+
 - **Restored the top web handoff banner.** `<EazoProvider>` mounts
   `<EazoBrandBanner />` again on plain-web hosts. The center handoff modal
   remains disabled (`MODAL_ENABLED=false`); only the single top strip renders.

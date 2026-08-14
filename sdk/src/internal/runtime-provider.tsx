@@ -10,7 +10,6 @@
 
 import * as React from "react";
 
-import { EazoBrandBanner } from "./banner-ui";
 import type { PublicAppInfo } from "./banner-ui/app-info";
 import { setInitialAppInfo } from "./banner-ui/initial-info";
 import { ensureBannerStylesInjected } from "./banner-ui/styles";
@@ -36,26 +35,28 @@ export function _EazoRuntimeProvider(props: {
   setHostApiBase(props.apiBase);
   setInitialAppInfo(props.initialAppInfo);
 
-  // Inject the banner-ui stylesheet eagerly (before EazoBrandBanner mounts)
-  // so the `.eazo-app-area` wrapper has its `display: contents`/active
-  // styles ready on first paint. Banner-ui re-injects the same sheet on
-  // its own mount; ensureBannerStylesInjected is idempotent via STYLE_ID.
-  // The function self-gates on `getHost() === "web"` internally, so in
-  // mobile WebView / iframe hosts this is a no-op — no banner CSS ever
-  // lands in `document.head`.
+  // Inject the wrapper stylesheet eagerly so the `.eazo-app-area`
+  // wrapper has its default `display: contents` styling ready on first
+  // paint. `ensureBannerStylesInjected` is idempotent via STYLE_ID and
+  // self-gates on `getHost() === "web"`, so in mobile WebView / iframe
+  // hosts this is a no-op — no wrapper CSS ever lands in `document.head`.
+  // The SDK no longer renders its own brand banner; the active wrapper
+  // styles (gated on `html.eazo-host-web`) therefore stay dormant, but
+  // the sheet is still injected so the markup keeps its base rules.
   if (typeof document !== "undefined") {
     ensureBannerStylesInjected();
   }
 
-  // Detect the runtime host so banner-related React components don't
-  // even mount in mobile WebView / iframe. `null` until the post-mount
-  // effect resolves it; treat null as "render the banner UI" so SSR
-  // and the first client render emit the same JSX (no hydration mismatch).
-  // After the effect resolves on the client:
-  //   - web:  `host === "web"`         → banner UI stays mounted
+  // Detect the runtime host so web-only React components (login /
+  // share-download UI) don't even mount in mobile WebView / iframe.
+  // `null` until the post-mount effect resolves it; treat null as
+  // "render the web UI" so SSR and the first client render emit the
+  // same JSX (no hydration mismatch). After the effect resolves on the
+  // client:
+  //   - web:  `host === "web"`         → web UI stays mounted
   //   - other: `host === "eazoMobile" | "embeddedIframe"` → unmounts.
   //
-  // Banner UI components are SIBLINGS of the .eazo-app-area wrapper, so
+  // These UI components are SIBLINGS of the .eazo-app-area wrapper, so
   // unmounting them does NOT affect host children — children stay at the
   // same JSX position throughout, no remount.
   const [host, setHost] = React.useState<Host | null>(null);
@@ -66,7 +67,7 @@ export function _EazoRuntimeProvider(props: {
     void _bootstrapDevice();
     setHost(getHost());
   }, []);
-  const showBannerUI = host === null || host === "web";
+  const showWebUI = host === null || host === "web";
 
   return (
     <MountedContext.Provider value={true}>
@@ -77,20 +78,21 @@ export function _EazoRuntimeProvider(props: {
        *     .eazo-app-area-scroller   ← inner: scroll container (overflow:auto)
        *       {host children}
        *
-       * On plain web (where the top banner renders), `<html>` gets the
-       * `eazo-host-web` class and both layers receive their active styles.
-       * The center handoff modal stays disabled via `MODAL_ENABLED=false`
-       * inside `EazoBrandBanner` — only the top strip is shown.
-       *
-       * In mobile WebView / iframe the `eazo-host-web` class is never
-       * added; both layers fall back to `display: contents`.
+       * The SDK no longer renders its own top web→app handoff banner —
+       * branding is now delivered by the hosted `eazo-brand-banner.js`
+       * drop-in script (loaded by the app itself), which manages its own
+       * banner layout and page spacing. Because the SDK banner was the
+       * only thing that set the `eazo-host-web` class on `<html>`, both
+       * wrapper layers now stay at `display: contents` (a layout no-op)
+       * in every host, so host content flows normally in `<body>`. The
+       * wrapper markup is kept so the styling can be re-activated if the
+       * SDK ever brings the banner back.
        */}
       <div className="eazo-app-area">
         <div className="eazo-app-area-scroller">{props.children}</div>
       </div>
-      {showBannerUI && (
+      {showWebUI && (
         <>
-          <EazoBrandBanner />
           <LoginUI />
           <ShareDownloadModal />
         </>

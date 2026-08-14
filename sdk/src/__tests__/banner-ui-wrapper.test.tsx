@@ -5,33 +5,35 @@ import { EazoProvider } from "../react";
 import { __resetSDK } from "../testing";
 
 /**
- * Regression coverage for the `.eazo-app-area` wrapper + banner-UI
- * mounting behaviour. The contract under test:
+ * Regression coverage for the `.eazo-app-area` wrapper + web-UI mounting
+ * behaviour.
+ *
+ * The SDK no longer renders its own top web→app handoff banner — branding
+ * is delivered by the hosted `eazo-brand-banner.js` drop-in script that
+ * the app loads itself. What remains under test:
  *
  *   1. Wrapper markup (`.eazo-app-area` + `.eazo-app-area-scroller`)
  *      ALWAYS renders — both layers — so SSR/CSR markup is identical
  *      across hosts and there's no hydration mismatch.
  *
- *   2. The styles that ACTIVATE the wrapper (position: fixed, transform,
- *      overflow: auto) only apply under `html.eazo-host-web`, which
- *      banner-ui adds on mount only in plain-web hosts. Default state is
- *      `display: contents` — the wrapper boxes disappear from layout.
+ *   2. Because the SDK banner was the only thing that added the
+ *      `eazo-host-web` class (and the `<html>` padding / handoff CSS
+ *      vars), NONE of that is set anymore — in ANY host. The wrapper
+ *      layers stay at their default `display: contents` (a layout no-op)
+ *      everywhere, so host content flows normally in `<body>` and the
+ *      drop-in script owns all banner spacing.
  *
- *   3. Banner-related React components (`<EazoBrandBanner />`,
- *      `<LoginUI />`, `<ShareDownloadModal />`) are NOT mounted in
- *      mobile WebView / iframe hosts. The provider strips them from the
- *      tree once host detection settles, so no store subscriptions,
- *      effects, or DOM nodes for those components exist in mobile.
+ *   3. Web-only React components (`<LoginUI />`, `<ShareDownloadModal />`)
+ *      are NOT mounted in mobile WebView / iframe hosts. The provider
+ *      strips them from the tree once host detection settles.
  *
- *   4. The banner-UI stylesheet is NOT injected into `document.head` in
- *      mobile/iframe hosts — `ensureBannerStylesInjected()` self-gates
- *      on `getHost() === "web"`.
+ *   4. The wrapper stylesheet is still injected into `document.head` on
+ *      plain-web (it carries the `.eazo-app-area` rules) but NOT in
+ *      mobile/iframe hosts — `ensureBannerStylesInjected()` self-gates on
+ *      `getHost() === "web"`.
  *
- *   5. `<html>` itself sees no class, padding, or CSS-var pollution in
- *      mobile/iframe hosts.
- *
- *   6. On plain-web, the top banner renders but the center handoff modal
- *      stays disabled (`MODAL_ENABLED=false`).
+ *   5. The SDK's brand banner (`.eazo-handoff-root` / `.eazo-banner-root`)
+ *      is never rendered in any host.
  */
 
 interface RNGlobal {
@@ -109,7 +111,7 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
         <span />
       </EazoProvider>,
     );
-    // Let the banner-ui mount effect (and any setTimeout/microtasks it
+    // Let the provider's mount effect (and any setTimeout/microtasks it
     // queues) flush so we're not racing the assertion.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
@@ -136,15 +138,13 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    // ensureBannerStylesInjected() runs both in EazoProvider render
-    // AND in banner-ui's mount effect, but both paths self-gate on
-    // getHost() === "web". In the mobile host the <style> tag must
-    // never appear.
+    // ensureBannerStylesInjected() self-gates on getHost() === "web". In
+    // the mobile host the <style> tag must never appear.
     expect(document.getElementById("eazo-sdk-banner-ui")).toBeNull();
     unmount();
   });
 
-  it("does NOT mount banner-UI React components in the mobile WebView host", async () => {
+  it("does NOT mount web-UI React components in the mobile WebView host", async () => {
     installRN();
     const { container, unmount } = render(
       <EazoProvider>
@@ -154,10 +154,9 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    // EazoBrandBanner renders a `<div class="eazo-handoff-root">` once
-    // it has finished its mount work. In mobile we expect it to have
-    // been stripped from the tree by EazoProvider's post-mount host
-    // detection — so the root marker must not exist.
+    // The SDK never renders its own brand banner anymore, and the
+    // remaining web UI (login / share-download) is stripped from the tree
+    // in mobile — so the banner root marker must not exist.
     expect(container.querySelector(".eazo-handoff-root")).toBeNull();
     // Sanity: host children are still rendered (they live inside the
     // always-rendered wrapper layers).
@@ -165,7 +164,7 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     unmount();
   });
 
-  it("DOES inject the banner-ui stylesheet into <head> on plain-web hosts", async () => {
+  it("DOES inject the wrapper stylesheet into <head> on plain-web hosts", async () => {
     removeRN();
     const { unmount } = render(
       <EazoProvider>
@@ -183,7 +182,7 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     unmount();
   });
 
-  it("mounts the top banner but NOT the center handoff modal on plain-web hosts", async () => {
+  it("never renders the SDK brand banner on plain-web hosts", async () => {
     removeRN();
     const { container, unmount } = render(
       <EazoProvider>
@@ -193,16 +192,19 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(container.querySelector(".eazo-handoff-root")).not.toBeNull();
-    expect(container.querySelector(".eazo-banner-root")).not.toBeNull();
+    // Branding is delivered by the hosted drop-in script, not the SDK —
+    // so neither the handoff root nor the top banner ever mount.
+    expect(container.querySelector(".eazo-handoff-root")).toBeNull();
+    expect(container.querySelector(".eazo-banner-root")).toBeNull();
     expect(container.querySelector(".eazo-handoff-overlay")).toBeNull();
     expect(container.querySelector(".eazo-modal")).toBeNull();
     unmount();
   });
 
-  it("sets eazo-host-web + handoff CSS vars on <html> in plain-web host, and clears them on unmount", async () => {
+  it("does NOT set eazo-host-web or handoff CSS vars on <html> in plain-web host", async () => {
     // No RN bridge installed → getHost() === "web".
     removeRN();
+    const html = document.documentElement;
     const { unmount } = render(
       <EazoProvider>
         <span />
@@ -211,25 +213,19 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    const html = document.documentElement;
-    expect(html.classList.contains("eazo-host-web")).toBe(true);
-    expect(html.style.paddingTop).not.toBe("");
-    // No bottom banner anymore → no bottom padding is reserved, but the
-    // `--eazo-handoff-bottom` var is still published (pinned to 0px) so
-    // host code reading it without a fallback gets a valid length.
-    expect(html.style.paddingBottom).toBe("");
-    expect(html.style.getPropertyValue("--eazo-handoff-top")).not.toBe("");
-    expect(html.style.getPropertyValue("--eazo-handoff-bottom")).toBe("0px");
-
-    unmount();
+    // The class + padding + handoff vars were owned by the (now removed)
+    // SDK brand banner. With branding delegated to the drop-in script,
+    // the SDK leaves `<html>` untouched — the drop-in reserves its own
+    // banner space.
     expect(html.classList.contains("eazo-host-web")).toBe(false);
     expect(html.style.paddingTop).toBe("");
     expect(html.style.paddingBottom).toBe("");
     expect(html.style.getPropertyValue("--eazo-handoff-top")).toBe("");
     expect(html.style.getPropertyValue("--eazo-handoff-bottom")).toBe("");
+    unmount();
   });
 
-  it("restores prior <html> CSS-var values on unmount instead of leaking the SDK's", async () => {
+  it("leaves prior <html> CSS-var values untouched on plain-web host", async () => {
     removeRN();
     const html = document.documentElement;
     html.style.setProperty("--eazo-handoff-top", "999px");
@@ -243,11 +239,12 @@ describe("EazoProvider .eazo-app-area wrapper", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    // While mounted, SDK overwrites to its own height.
-    expect(html.style.getPropertyValue("--eazo-handoff-top")).not.toBe("999px");
+    // The SDK no longer writes these vars, so a host's own values survive
+    // unchanged for the whole lifecycle.
+    expect(html.style.getPropertyValue("--eazo-handoff-top")).toBe("999px");
+    expect(html.style.getPropertyValue("--eazo-handoff-bottom")).toBe("888px");
 
     unmount();
-    // After unmount, the previous host value is restored, not removed.
     expect(html.style.getPropertyValue("--eazo-handoff-top")).toBe("999px");
     expect(html.style.getPropertyValue("--eazo-handoff-bottom")).toBe("888px");
   });
