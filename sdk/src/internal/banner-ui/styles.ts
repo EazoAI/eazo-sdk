@@ -41,8 +41,7 @@ export const BANNER_UI_CSS = `
  *  hydration mismatch). The effective styles activate only when the host
  *  is a plain web browser AND the handoff banners are mounted — gated on
  *  the \`eazo-host-web\` class on \`<html>\`, set/cleared by the banner-ui
- *  effect. In a mobile WebView or iframe the baseline stylesheet gives both
- *  elements a definite viewport-height chain without taking over scrolling.
+ *  effect. In a mobile WebView or iframe both elements are inert \`<div>\`s.
  *
  *  Why two layers (this is the whole point):
  *
@@ -72,12 +71,11 @@ export const BANNER_UI_CSS = `
  *  Why scope the styles to \`html.eazo-host-web\`:
  *    The wrapper only exists to keep host content clear of the SDK's
  *    handoff banners. In a mobile WebView or iframe the banners don't
- *    render — the wrapper only preserves a definite height chain, and
- *    activating the fixed-position + overflow + containing-block semantics
- *    there would silently break
+ *    render — the wrapper has no job, and activating the fixed-position
+ *    + overflow + containing-block semantics there would silently break
  *    \`window.scrollY\`, \`window\` scroll listeners, body-overflow scroll
  *    locks, and host modals at \`position: fixed; inset: 0\` for zero
- *    product benefit. So those behaviours stay disabled outside plain web.
+ *    product benefit. So both layers stay inert outside plain web.
  *
  *  Known trade-offs on web (called out in CHANGELOG):
  *    - Scrolling happens inside \`.eazo-app-area-scroller\`, not on
@@ -90,16 +88,28 @@ export const BANNER_UI_CSS = `
  *      visually equivalent (the wrapper IS the safe-area box) but
  *      \`inset: 0\` no longer covers the banner area.
  */
-/* The embedded-host viewport-height baseline lives in
- * \`app-area-styles.ts\` because the wrapper markup exists in every host.
- * This plain-web-only sheet replaces it with the banner-safe area. */
+/* Default state for the two wrapper layers: \`display: contents\` makes
+ * the wrapper boxes disappear from layout entirely. Their children
+ * participate in the GRANDPARENT's layout context (i.e. directly in the
+ * \`<body>\`'s flex column) as if the wrapper elements didn't exist.
+ * With no generated box there's also no containing block for fixed
+ * descendants — host's \`position: fixed; bottom: 0\` resolves all the
+ * way up to the viewport, exactly as it would without the SDK present.
+ *
+ * This is the ONLY state the wrapper takes in mobile WebView / iframe
+ * hosts: the banners aren't mounted, the wrapper has no job, so it
+ * collapses to a layout no-op. \`html.eazo-host-web\` (added by banner-ui
+ * on mount, only in plain web) overrides BOTH layers below to their
+ * full active styles. */
+.eazo-app-area,
+.eazo-app-area-scroller {
+  display: contents;
+}
+
 html.eazo-host-web .eazo-app-area {
   display: block;
   position: fixed;
   inset: var(--eazo-handoff-top, 0px) 0 var(--eazo-handoff-bottom, 0px) 0;
-  height: auto;
-  min-height: 0;
-  flex: none;
   /* Containing block for fixed-positioned descendants — this is what
    * lets host's \`position: fixed; bottom: 0\` anchor to the wrapper
    * (between the banners) instead of to the viewport (under our banner).

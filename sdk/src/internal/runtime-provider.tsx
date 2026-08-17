@@ -10,11 +10,8 @@
 
 import * as React from "react";
 
-import { AppAreaStyles } from "./app-area-styles";
-import { EazoBrandBanner } from "./banner-ui";
 import type { PublicAppInfo } from "./banner-ui/app-info";
 import { setInitialAppInfo } from "./banner-ui/initial-info";
-import { ensureBannerStylesInjected } from "./banner-ui/styles";
 import { getBridge } from "./bootstrap";
 import { _bootstrapAuth } from "./capabilities/auth";
 import { _bootstrapDevice } from "./capabilities/device";
@@ -37,23 +34,18 @@ export function _EazoRuntimeProvider(props: {
   setHostApiBase(props.apiBase);
   setInitialAppInfo(props.initialAppInfo);
 
-  // Banner UI remains a client-only plain-web concern. The wrapper's neutral
-  // default is rendered below so it is already present in SSR output.
-  if (typeof document !== "undefined") {
-    ensureBannerStylesInjected();
-  }
-
-  // Detect the runtime host so banner-related React components don't
-  // even mount in mobile WebView / iframe. `null` until the post-mount
-  // effect resolves it; treat null as "render the banner UI" so SSR
-  // and the first client render emit the same JSX (no hydration mismatch).
-  // After the effect resolves on the client:
-  //   - web:  `host === "web"`         → banner UI stays mounted
+  // Detect the runtime host so web-only React components (login /
+  // share-download UI) don't even mount in mobile WebView / iframe.
+  // `null` until the post-mount effect resolves it; treat null as
+  // "render the web UI" so SSR and the first client render emit the
+  // same JSX (no hydration mismatch). After the effect resolves on the
+  // client:
+  //   - web:  `host === "web"`         → web UI stays mounted
   //   - other: `host === "eazoMobile" | "embeddedIframe"` → unmounts.
   //
-  // Banner UI components are SIBLINGS of the .eazo-app-area wrapper, so
-  // unmounting them does NOT affect host children — children stay at the
-  // same JSX position throughout, no remount.
+  // These UI components are siblings of the app children. The provider
+  // deliberately adds no DOM wrapper or layout CSS around the app, so
+  // host detection and UI mounting cannot change the app's layout.
   const [host, setHost] = React.useState<Host | null>(null);
   React.useEffect(() => {
     // Starting the bridge is idempotent; capability access may have already done so.
@@ -62,32 +54,13 @@ export function _EazoRuntimeProvider(props: {
     void _bootstrapDevice();
     setHost(getHost());
   }, []);
-  const showBannerUI = host === null || host === "web";
+  const showWebUI = host === null || host === "web";
 
   return (
     <MountedContext.Provider value={true}>
-      <AppAreaStyles />
-      {/*
-       * Wrap host children in a TWO-LAYER container:
-       *
-       *   .eazo-app-area              ← outer: containing block (transform)
-       *     .eazo-app-area-scroller   ← inner: scroll container (overflow:auto)
-       *       {host children}
-       *
-       * On plain web (where the top banner renders), `<html>` gets the
-       * `eazo-host-web` class and both layers receive their active styles.
-       * The center handoff modal stays disabled via `MODAL_ENABLED=false`
-       * inside `EazoBrandBanner` — only the top strip is shown.
-       *
-       * In mobile WebView / iframe the `eazo-host-web` class is never
-       * added; both layers fall back to `display: contents`.
-       */}
-      <div className="eazo-app-area">
-        <div className="eazo-app-area-scroller">{props.children}</div>
-      </div>
-      {showBannerUI && (
+      {props.children}
+      {showWebUI && (
         <>
-          <EazoBrandBanner />
           <LoginUI />
           <ShareDownloadModal />
         </>

@@ -9,19 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Prevented full-height apps from collapsing inside Eazo Mobile WebView and
-  iframe hosts.** The provider's always-rendered wrapper layers now establish
-  a definite viewport-height chain in SSR output without taking over document
-  scrolling. This keeps percentage-height app roots visible even when the app
-  body only declares `min-height: 100%`.
+- **Prevented app content from collapsing inside Eazo Mobile WebView and iframe
+  hosts.** `<EazoProvider>` now renders app children directly, without the
+  `.eazo-app-area` / `.eazo-app-area-scroller` DOM wrappers or their layout CSS.
+  This restores the app's original height, flex, fixed-position, and scrolling
+  behavior while keeping the SDK's login/share UI as non-layout siblings.
 
 ### Changed
 
-- **Restored the top web handoff banner.** `<EazoProvider>` mounts
-  `<EazoBrandBanner />` again on plain-web hosts. The center handoff modal
-  remains disabled (`MODAL_ENABLED=false`); only the single top strip renders.
-  SSR prefetch of `PublicAppInfo` is restored so the banner can paint real app
-  identity on first frame. Mobile WebView and iframe behaviour is unchanged.
+- **The SDK no longer renders its own web→app handoff banner.**
+  `<EazoProvider>` stopped mounting `<EazoBrandBanner />`; branding is now
+  delivered by the hosted, framework-agnostic `eazo-brand-banner.js` drop-in
+  script that the app loads itself (e.g. via `next/script`). Because the SDK
+  banner was the only code that added the `eazo-host-web` class and the
+  `<html>` handoff padding / CSS vars, the SDK now leaves `<html>` untouched
+  and no longer wraps app content in banner layout containers — the drop-in
+  script owns all banner spacing. `LoginUI`,
+  `ShareDownloadModal`, auth/device bootstrap, and mobile WebView / iframe
+  behaviour are unchanged. The `banner-ui` module (including `EazoBrandBanner`)
+  is kept in the source tree so the banner can be re-activated if needed.
 
 ## [0.21.0] - 2026-06-11
 
