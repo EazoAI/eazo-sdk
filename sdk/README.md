@@ -91,6 +91,15 @@ device.locale                               // 'zh-CN' | ...
 device.getContext()                         // full DeviceContext
 ```
 
+#### Edge-to-edge layout and safe areas
+
+Eazo Mobile presents hosted apps edge to edge with `viewport-fit=cover`. On
+iOS, WebKit publishes native values through `env(safe-area-inset-*)`.
+`EazoProvider` does not move or pad hosted app content in Mobile: backgrounds
+may remain full bleed, while visible text and controls must consume the
+template's resolved `--safe-*` variables (or `env()` directly in apps that do
+not use the template).
+
 ### `share`
 
 Hand share materials (text + image attachments) to the platform's compose surface. Inside the Eazo Mobile WebView the host opens its native compose page, AI-drafts a post from the inputs, and lets the user edit and publish; in a plain browser the SDK shows a "Continue in the Eazo app" CTA pointing to https://eazo.ai/.
