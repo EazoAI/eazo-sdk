@@ -26,8 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and no longer wraps app content in banner layout containers — the drop-in
   script owns all banner spacing. `LoginUI`,
   `ShareDownloadModal`, auth/device bootstrap, and mobile WebView / iframe
-  behaviour are unchanged. The `banner-ui` module (including `EazoBrandBanner`)
-  is kept in the source tree so the banner can be re-activated if needed.
+  behaviour are unchanged. The retired `banner-ui` implementation and its QR
+  dependency have been removed; `eazo-brand-banner` is now the sole banner UI
+  implementation. The server Provider also no longer prefetches public app
+  data that only the retired banner consumed. Public app-info types, the
+  server-side `fetchPublicAppInfo` helper, and memory consent checks remain.
 
 ## [0.21.0] - 2026-06-11
 

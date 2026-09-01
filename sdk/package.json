@@ -78,8 +78,7 @@
     "@radix-ui/react-dialog": "^1.1.4",
     "authing-js-sdk": "^4.23.55",
     "elliptic": "^6.6.1",
-    "openai": "^6.34.0",
-    "qrcode-generator": "^1.5.2"
+    "openai": "^6.34.0"
   },
   "peerDependencies": {
     "react": ">=18"

@@ -2,7 +2,7 @@ import { getBridge, waitForBootstrap } from "../bootstrap";
 import { MEMORY_REPORT_ACTION } from "../bridge/protocol";
 import { getPlatformApiBase, getAppId } from "../config";
 import { getHost } from "../env";
-import { resolveSendAnonymousDataEnabled } from "../banner-ui/app-info";
+import { resolveSendAnonymousDataEnabled } from "../app-info";
 import { auth } from "./auth";
 
 export interface MemoryActionParams {

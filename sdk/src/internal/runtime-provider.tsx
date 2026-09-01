@@ -1,17 +1,12 @@
 "use client";
 
-// Internal runtime provider — receives the resolved `appId` / `apiBase` /
-// `initialAppInfo` as required props and mounts the SDK runtime. The
-// public `EazoProvider` in `react.tsx` / `react.server.tsx` resolves
-// these values from env (and prefetches `PublicAppInfo` on the server)
-// and forwards them here. Keeping this layer separate is what lets the
-// public `EazoProvider` expose a zero-prop API while still passing the
-// SSR-resolved values across the server/client boundary via React props.
+// Internal runtime provider — receives the resolved `appId` / `apiBase`
+// as required props and mounts the SDK runtime. The public `EazoProvider`
+// in `react.tsx` / `react.server.tsx` resolves these values from env and
+// forwards them here.
 
 import * as React from "react";
 
-import type { PublicAppInfo } from "./banner-ui/app-info";
-import { setInitialAppInfo } from "./banner-ui/initial-info";
 import { getBridge } from "./bootstrap";
 import { _bootstrapAuth } from "./capabilities/auth";
 import { _bootstrapDevice } from "./capabilities/device";
@@ -26,13 +21,11 @@ export function _EazoRuntimeProvider(props: {
   children: React.ReactNode;
   appId: string;
   apiBase: string | null;
-  initialAppInfo: PublicAppInfo | null;
 }): React.ReactElement {
   setAppId(props.appId);
   // Setter ignores null/empty — calling unconditionally keeps the
   // "clear on Provider unmount with apiBase removed" semantics simple.
   setHostApiBase(props.apiBase);
-  setInitialAppInfo(props.initialAppInfo);
 
   // Detect the runtime host so web-only React components (login /
   // share-download UI) don't even mount in mobile WebView / iframe.

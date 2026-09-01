@@ -228,19 +228,16 @@ export const notifications = {
 export type { User } from "./types";
 
 // ---------------------------------------------------------------------------
-// Public app info — server-side prefetch helper
+// Public app info
 // ---------------------------------------------------------------------------
 //
-// Re-exported so host apps can prefetch the public `PublicAppInfo` from a
-// Server Component (Next.js layout, Remix loader, etc.) and pass it to
-// `<EazoProvider initialAppInfo>` — the handoff banner then renders real
-// content on first paint, no skeleton flash. The implementation itself
-// lives in `internal/banner-ui/app-info.ts` and is pure `fetch`, so it
-// runs unchanged on Node ≥18 and Edge runtimes.
+// Re-exported so server-side host code can fetch the public app profile.
+// The implementation is pure `fetch`, so it runs unchanged on Node ≥18
+// and Edge runtimes.
 
-export { fetchPublicAppInfo } from "./internal/banner-ui/app-info";
+export { fetchPublicAppInfo } from "./internal/app-info";
 export type {
   PublicAppData,
   PublicAppInfo,
   PublicAppViewer,
-} from "./internal/banner-ui/app-info";
+} from "./internal/app-info";

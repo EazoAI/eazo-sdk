@@ -3,7 +3,7 @@ import { __resetAuthCapability } from "./internal/capabilities/auth";
 import { __resetDeviceCapability } from "./internal/capabilities/device";
 import { __resetShareCapability } from "./internal/capabilities/share";
 import { __resetConfig } from "./internal/config";
-import { __resetSendAnonymousDataCache } from "./internal/banner-ui/app-info";
+import { __resetSendAnonymousDataCache } from "./internal/app-info";
 import { store } from "./internal/store";
 
 /**
