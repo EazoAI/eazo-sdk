@@ -11,6 +11,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # OIDC (Trusted Publishing) 需要 id-token 权限来让 GitHub 签发 OIDC token
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,6 +34,10 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      # Trusted Publishing (OIDC) 需要较新的 npm。setup-node 自带的 npm 可能过旧,显式升级。
+      - name: Upgrade npm (for trusted publishing / OIDC)
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: cd sdk && npm ci
 
@@ -42,6 +51,7 @@ jobs:
         run: cd sdk && npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Publish @eazo/sdk
+        # 使用 Trusted Publishing (OIDC),无需 NPM token。
+        # 认证由 GitHub 签发的 OIDC token 自动完成。
+        # 前提:已在 npmjs.com 的 @eazo/sdk 包设置里配置好本仓库为 trusted publisher。
         run: cd sdk && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
