@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.10] - 2026-09-08
+
+### Documentation
+
+- Clarify that hosted apps and templates own safe-area placement; the SDK
+  keeps application content layout-neutral.
+
 ### Fixed
 
 - **Prevented app content from collapsing inside Eazo Mobile WebView and iframe
