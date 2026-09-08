@@ -31,7 +31,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       # Trusted Publishing (OIDC) 需要较新的 npm。setup-node 自带的 npm 可能过旧,显式升级。
