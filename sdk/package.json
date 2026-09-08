@@ -74,6 +74,10 @@
   ],
   "author": "Eazo",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EazoAI/eazo-sdk.git"
+  },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
     "authing-js-sdk": "^4.23.55",
