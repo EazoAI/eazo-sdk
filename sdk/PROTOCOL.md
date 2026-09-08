@@ -110,6 +110,13 @@ The app checks this list before sending a request; unsupported methods fail imme
 | `auth.changed` | `{ authenticated, user, token }` | Login, logout, account switch |
 | `auth.loginCancelled` | — (optional `{ reason?: string }`) | User dismissed the native login UI without authenticating. Causes the app's in-flight `auth.login()` to reject with `DENIED`. |
 
+### Safe-area geometry
+
+Safe-area geometry is intentionally not part of `DeviceContext` or the
+postMessage protocol. Edge-to-edge iOS hosts expose it through WebKit CSS
+`env(safe-area-inset-*)`; app or template CSS decides which content consumes
+those values. The SDK does not inset the application layout.
+
 ## Version evolution
 
 - **Breaking change** → bump `v`; host replies `NOT_SUPPORTED` if mismatched
