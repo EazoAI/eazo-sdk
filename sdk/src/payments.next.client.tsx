@@ -167,7 +167,25 @@ export function EazoPaymentCancelPage({
   className,
 }: EazoPaymentCancelPageProps) {
   React.useEffect(() => {
-    clearRememberedEazoPaymentId();
+    const paymentId = readEazoPaymentIdFromUrl() || readRememberedEazoPaymentId();
+    if (!paymentId) {
+      clearRememberedEazoPaymentId();
+      return;
+    }
+    void (async () => {
+      try {
+        const headers = await getEazoPaymentSessionHeaders();
+        await fetch("/api/payments/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ paymentId }),
+        });
+      } catch {
+        // Checkout is already canceled from the customer's perspective.
+      } finally {
+        clearRememberedEazoPaymentId();
+      }
+    })();
   }, []);
 
   return (

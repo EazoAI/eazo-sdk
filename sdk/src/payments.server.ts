@@ -9,12 +9,15 @@ import {
   normalizeEazoCheckoutResult,
   type EazoAppSubscription,
   type EazoAppSubscriptionsResponse,
+  type CreateEazoAppCouponInput,
   type CreateEazoCartCheckoutInput,
   type CreateEazoCheckoutInput,
   type CreateEazoCheckoutResult,
   type EazoCheckoutSessionRequest,
   type EazoCheckoutSessionResponse,
   type EazoEntitlement,
+  type EazoAppCoupon,
+  type EazoAppCouponClaim,
   type EazoPaymentApiErrorBody,
   type EazoPaymentStatus,
 } from "./payments";
@@ -151,8 +154,14 @@ export function buildEazoCartCheckoutRequest(
   if (input.items.length > 100) {
     throw new Error("items must contain at most 100 products");
   }
-  if (input.promotionCode && input.allowPromotionCodes) {
-    throw new Error("promotionCode and allowPromotionCodes are mutually exclusive");
+  const autoApplyClaimedCoupon = input.autoApplyClaimedCoupon ?? (
+    !input.promotionCode && !input.allowPromotionCodes
+  );
+  if (
+    (input.promotionCode && input.allowPromotionCodes) ||
+    (autoApplyClaimedCoupon && (input.promotionCode || input.allowPromotionCodes))
+  ) {
+    throw new Error("choose one coupon application mode");
   }
 
   const seenProductKeys = new Set<string>();
@@ -204,6 +213,7 @@ export function buildEazoCartCheckoutRequest(
     items,
     ...(input.promotionCode ? { promotion_code: input.promotionCode } : {}),
     ...(input.allowPromotionCodes ? { allow_promotion_codes: true } : {}),
+    ...(autoApplyClaimedCoupon ? { auto_apply_claimed_coupon: true } : {}),
     metadata: {
       mode: EAZO_PAYMENT_MODE.ONE_TIME,
       ...(input.appUserId ? { app_user_id: input.appUserId } : {}),
@@ -254,6 +264,153 @@ export async function createEazoCartCheckoutSession(
   input: CreateEazoCartCheckoutInput,
 ): Promise<CreateEazoCheckoutResult> {
   return postEazoCheckoutSession(buildEazoCartCheckoutRequest(input));
+}
+
+export async function createEazoAppCoupon(
+  input: CreateEazoAppCouponInput & { appUserId: string },
+): Promise<{ coupon: EazoAppCoupon; created: boolean }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const response = await fetch(`${apiBase}/api/open/payments/coupons`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${privateKey}`,
+    },
+    body: JSON.stringify({
+      app_id: appId,
+      app_user_id: input.appUserId,
+      code: input.code,
+      name: input.name,
+      discount_type: input.discountType,
+      percent_off_bps: input.percentOffBps,
+      amount_off: input.amountOff,
+      currency: input.currency,
+      minimum_amount: input.minimumAmount ?? 0,
+      max_claims: input.maxClaims,
+      starts_at: input.startsAt,
+      expires_at: input.expiresAt,
+    }),
+  });
+  const data = (await readJson(response)) as {
+    coupon: EazoAppCoupon;
+    created: boolean;
+  } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Coupon creation failed");
+  }
+  return data;
+}
+
+export async function listEazoAppCoupons(options: {
+  appUserId: string;
+  manage?: boolean;
+}): Promise<{ items: EazoAppCoupon[] }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const query = new URLSearchParams({
+    app_id: appId,
+    app_user_id: options.appUserId,
+    manage: String(Boolean(options.manage)),
+  });
+  const response = await fetch(`${apiBase}/api/open/payments/coupons?${query}`, {
+    headers: { Authorization: `Bearer ${privateKey}` },
+    cache: "no-store",
+  });
+  const data = (await readJson(response)) as { items: EazoAppCoupon[] } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Coupon list failed");
+  }
+  return data;
+}
+
+export async function claimEazoAppCoupon(
+  couponId: string,
+  options: { appUserId: string },
+): Promise<{ coupon: EazoAppCoupon; claim: EazoAppCouponClaim; claimed: boolean }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const response = await fetch(
+    `${apiBase}/api/open/payments/coupons/${encodeURIComponent(couponId)}/claim`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${privateKey}`,
+      },
+      body: JSON.stringify({ app_id: appId, app_user_id: options.appUserId }),
+    },
+  );
+  const data = (await readJson(response)) as {
+    coupon: EazoAppCoupon;
+    claim: EazoAppCouponClaim;
+    claimed: boolean;
+  } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Coupon claim failed");
+  }
+  return data;
+}
+
+export async function listEazoCouponWallet(options: {
+  appUserId: string;
+}): Promise<{ items: Array<{ coupon: EazoAppCoupon; claim: EazoAppCouponClaim }> }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const query = new URLSearchParams({ app_id: appId, app_user_id: options.appUserId });
+  const response = await fetch(`${apiBase}/api/open/payments/coupon-wallet?${query}`, {
+    headers: { Authorization: `Bearer ${privateKey}` },
+    cache: "no-store",
+  });
+  const data = (await readJson(response)) as {
+    items: Array<{ coupon: EazoAppCoupon; claim: EazoAppCouponClaim }>;
+  } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Coupon wallet failed");
+  }
+  return data;
+}
+
+export async function deactivateEazoAppCoupon(
+  couponId: string,
+  options: { appUserId: string },
+): Promise<{ coupon: EazoAppCoupon }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const response = await fetch(
+    `${apiBase}/api/open/payments/coupons/${encodeURIComponent(couponId)}/deactivate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${privateKey}`,
+      },
+      body: JSON.stringify({ app_id: appId, app_user_id: options.appUserId }),
+    },
+  );
+  const data = (await readJson(response)) as { coupon: EazoAppCoupon } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Coupon deactivation failed");
+  }
+  return data;
+}
+
+export async function cancelEazoPayment(
+  paymentId: string,
+  options: { appUserId: string },
+): Promise<{ canceled: boolean }> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const response = await fetch(
+    `${apiBase}/api/open/payments/${encodeURIComponent(paymentId)}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${privateKey}`,
+      },
+      body: JSON.stringify({ app_id: appId, app_user_id: options.appUserId }),
+    },
+  );
+  const data = (await readJson(response)) as { canceled: boolean } & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Payment cancellation failed");
+  }
+  return data;
 }
 
 export async function getEazoPaymentStatus(
@@ -371,12 +528,15 @@ export function resumeEazoSubscription(
 }
 
 export type {
+  CreateEazoAppCouponInput,
   CreateEazoCartCheckoutInput,
   CreateEazoCheckoutInput,
   CreateEazoCheckoutResult,
   EazoCheckoutSessionRequest,
   EazoCheckoutSessionResponse,
   EazoEntitlement,
+  EazoAppCoupon,
+  EazoAppCouponClaim,
   EazoEntitlementStatusValue,
   EazoAppSubscription,
   EazoAppSubscriptionStatus,

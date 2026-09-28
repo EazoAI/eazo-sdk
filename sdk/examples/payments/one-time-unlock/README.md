@@ -28,12 +28,22 @@ src/components/eazo-payments/PaymentUnlockPanel.tsx
 src/app/api/payments/checkout/route.ts
 src/app/api/payments/status/route.ts
 src/app/api/payments/entitlements/route.ts
+src/app/api/payments/cancel/route.ts
+src/app/api/payments/coupons/route.ts
+src/app/api/payments/coupons/[couponId]/claim/route.ts
+src/app/api/payments/coupons/[couponId]/deactivate/route.ts
+src/app/api/payments/coupon-wallet/route.ts
 src/app/payment/success/page.tsx
 src/app/payment/cancel/page.tsx
 src/app/page.tsx
 src/lib/eazo-payments/payment-contract.test.ts
 src/lib/eazo-payments/payment-ui-contract.test.tsx
 ```
+
+The coupon routes support app-owner coupon creation, authenticated customer
+claiming, coupon-wallet reads, and automatic best-coupon application during a
+one-time cart checkout. A canceled Checkout is expired before its reserved
+coupon returns to the customer's wallet.
 
 ## Code Explanation
 

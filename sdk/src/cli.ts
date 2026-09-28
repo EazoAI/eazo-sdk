@@ -252,6 +252,50 @@ export const GET = createEazoEntitlementRoute();
 `);
 }
 
+function paymentCancelRouteTemplate() {
+  return normalizeNewline(`
+import { createEazoPaymentCancelRoute } from "@eazo/sdk/payments/next";
+
+export const POST = createEazoPaymentCancelRoute();
+`);
+}
+
+function couponsRouteTemplate() {
+  return normalizeNewline(`
+import {
+  createEazoCouponCreateRoute,
+  createEazoCouponListRoute,
+} from "@eazo/sdk/payments/next";
+
+export const GET = createEazoCouponListRoute();
+export const POST = createEazoCouponCreateRoute();
+`);
+}
+
+function couponClaimRouteTemplate() {
+  return normalizeNewline(`
+import { createEazoCouponClaimRoute } from "@eazo/sdk/payments/next";
+
+export const POST = createEazoCouponClaimRoute();
+`);
+}
+
+function couponDeactivateRouteTemplate() {
+  return normalizeNewline(`
+import { createEazoCouponDeactivateRoute } from "@eazo/sdk/payments/next";
+
+export const POST = createEazoCouponDeactivateRoute();
+`);
+}
+
+function couponWalletRouteTemplate() {
+  return normalizeNewline(`
+import { createEazoCouponWalletRoute } from "@eazo/sdk/payments/next";
+
+export const GET = createEazoCouponWalletRoute();
+`);
+}
+
 function subscriptionsRouteTemplate() {
   return normalizeNewline(`
 import { createEazoSubscriptionsRoute } from "@eazo/sdk/payments/next";
@@ -1011,6 +1055,10 @@ function templateFiles(recipe: string): TemplateFile[] {
       content: entitlementRouteTemplate(),
     },
     {
+      filePath: "src/app/api/payments/cancel/route.ts",
+      content: paymentCancelRouteTemplate(),
+    },
+    {
       filePath: "src/app/payment/success/page.tsx",
       content: successPageTemplate(),
     },
@@ -1019,6 +1067,27 @@ function templateFiles(recipe: string): TemplateFile[] {
       content: cancelPageTemplate(),
     },
   ];
+
+  if (recipe === "one-time-unlock") {
+    files.push(
+      {
+        filePath: "src/app/api/payments/coupons/route.ts",
+        content: couponsRouteTemplate(),
+      },
+      {
+        filePath: "src/app/api/payments/coupons/[couponId]/claim/route.ts",
+        content: couponClaimRouteTemplate(),
+      },
+      {
+        filePath: "src/app/api/payments/coupons/[couponId]/deactivate/route.ts",
+        content: couponDeactivateRouteTemplate(),
+      },
+      {
+        filePath: "src/app/api/payments/coupon-wallet/route.ts",
+        content: couponWalletRouteTemplate(),
+      },
+    );
+  }
 
   if (recipe === "monthly-subscription") {
     files.splice(4, 0, {

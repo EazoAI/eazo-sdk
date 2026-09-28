@@ -33,6 +33,7 @@ src/components/eazo-payments/SubscriptionManagementPanel.tsx
 src/app/api/payments/checkout/route.ts
 src/app/api/payments/status/route.ts
 src/app/api/payments/entitlements/route.ts
+src/app/api/payments/cancel/route.ts
 src/app/api/payments/subscriptions/route.ts
 src/app/api/payments/subscriptions/[subscriptionId]/cancel/route.ts
 src/app/api/payments/subscriptions/[subscriptionId]/resume/route.ts

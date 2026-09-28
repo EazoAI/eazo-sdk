@@ -4,10 +4,16 @@ import {
 } from "./payments";
 import {
   cancelEazoSubscription,
+  cancelEazoPayment,
+  claimEazoAppCoupon,
+  createEazoAppCoupon,
   createEazoCartCheckoutSession,
   createEazoCheckoutSession,
+  deactivateEazoAppCoupon,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
+  listEazoAppCoupons,
+  listEazoCouponWallet,
   listEazoSubscriptions,
   resumeEazoSubscription,
 } from "./payments.server";
@@ -196,6 +202,13 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
           bodyRecord,
           ["allowPromotionCodes", "allow_promotion_codes"],
         );
+        const autoApplyClaimedCoupon = (
+          typeof bodyRecord.autoApplyClaimedCoupon === "boolean"
+            ? bodyRecord.autoApplyClaimedCoupon
+            : typeof bodyRecord.auto_apply_claimed_coupon === "boolean"
+              ? bodyRecord.auto_apply_claimed_coupon
+              : undefined
+        );
         if (promotionCode && allowPromotionCodes) {
           return jsonResponse(
             { error: "promotionCode and allowPromotionCodes are mutually exclusive" },
@@ -216,6 +229,7 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
           cancelUrl: `${origin}/payment/cancel`,
           ...(promotionCode ? { promotionCode } : {}),
           ...(allowPromotionCodes ? { allowPromotionCodes: true } : {}),
+          ...(autoApplyClaimedCoupon === undefined ? {} : { autoApplyClaimedCoupon }),
           metadata: { mode: "one_time" },
         });
         return jsonResponse(checkout);
@@ -330,6 +344,145 @@ export function createEazoEntitlementRoute(options: {
         { error: error instanceof Error ? error.message : "Payment entitlement failed" },
         { status: 500 },
       );
+    }
+  };
+}
+
+function paymentRouteError(error: unknown, fallback: string) {
+  if (error instanceof EazoPaymentApiError) {
+    return jsonResponse(
+      { error: error.message, platform: error.body },
+      { status: error.status },
+    );
+  }
+  return jsonResponse(
+    { error: error instanceof Error ? error.message : fallback },
+    { status: 500 },
+  );
+}
+
+export function createEazoCouponListRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function GET(request: Request) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    try {
+      const manage = new URL(request.url).searchParams.get("manage") === "true";
+      const result = await listEazoAppCoupons({
+        appUserId: authResult.user.id,
+        manage,
+      });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Coupon list failed");
+    }
+  };
+}
+
+export function createEazoCouponCreateRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(request: Request) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    const body = await request.json().catch(() => ({}));
+    const input = body && typeof body === "object" ? body as JsonBody : {};
+    try {
+      const result = await createEazoAppCoupon({
+        appUserId: authResult.user.id,
+        code: String(input.code || ""),
+        name: String(input.name || ""),
+        discountType: input.discountType as "percent_off" | "amount_off",
+        currency: input.currency as import("./payments").EazoPaymentCurrency,
+        percentOffBps: input.percentOffBps === undefined ? undefined : Number(input.percentOffBps),
+        amountOff: input.amountOff === undefined ? undefined : Number(input.amountOff),
+        minimumAmount: input.minimumAmount === undefined ? undefined : Number(input.minimumAmount),
+        maxClaims: input.maxClaims === undefined ? undefined : Number(input.maxClaims),
+        startsAt: typeof input.startsAt === "string" ? input.startsAt : undefined,
+        expiresAt: typeof input.expiresAt === "string" ? input.expiresAt : undefined,
+      });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Coupon creation failed");
+    }
+  };
+}
+
+export function createEazoCouponClaimRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(
+    request: Request,
+    context: { params: Promise<{ couponId?: string; id?: string }> },
+  ) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    const params = await context.params;
+    const couponId = params.couponId || params.id || "";
+    if (!couponId) return jsonResponse({ error: "Missing couponId" }, { status: 400 });
+    try {
+      const result = await claimEazoAppCoupon(couponId, { appUserId: authResult.user.id });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Coupon claim failed");
+    }
+  };
+}
+
+export function createEazoCouponWalletRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function GET(request: Request) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    try {
+      const result = await listEazoCouponWallet({ appUserId: authResult.user.id });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Coupon wallet failed");
+    }
+  };
+}
+
+export function createEazoCouponDeactivateRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(
+    request: Request,
+    context: { params: Promise<{ couponId?: string; id?: string }> },
+  ) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    const params = await context.params;
+    const couponId = params.couponId || params.id || "";
+    if (!couponId) return jsonResponse({ error: "Missing couponId" }, { status: 400 });
+    try {
+      const result = await deactivateEazoAppCoupon(couponId, {
+        appUserId: authResult.user.id,
+      });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Coupon deactivation failed");
+    }
+  };
+}
+
+export function createEazoPaymentCancelRoute(options: {
+  getUser?: (request: Request) => ReturnType<typeof requireAuth>;
+} = {}) {
+  return async function POST(request: Request) {
+    const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
+    if (!authResult.ok) return authResult.response;
+    const body = await request.json().catch(() => ({}));
+    const input = body && typeof body === "object" ? body as JsonBody : {};
+    const paymentId = firstBodyString(input, ["paymentId", "payment_id"]);
+    if (!paymentId) return jsonResponse({ error: "Missing paymentId" }, { status: 400 });
+    try {
+      const result = await cancelEazoPayment(paymentId, { appUserId: authResult.user.id });
+      return jsonResponse(result as unknown as JsonBody);
+    } catch (error) {
+      return paymentRouteError(error, "Payment cancellation failed");
     }
   };
 }

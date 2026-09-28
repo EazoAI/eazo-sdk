@@ -181,6 +181,7 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
       "items",
       ...(body.promotion_code === undefined ? [] : ["promotion_code"]),
       ...(body.allow_promotion_codes === undefined ? [] : ["allow_promotion_codes"]),
+      ...(body.auto_apply_claimed_coupon === undefined ? [] : ["auto_apply_claimed_coupon"]),
       "metadata",
       "idempotency_key",
     ];
@@ -223,6 +224,9 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
     if (body.promotion_code !== undefined) assertString(body.promotion_code, "promotion_code");
     if (body.allow_promotion_codes !== undefined) {
       assertBoolean(body.allow_promotion_codes, "allow_promotion_codes");
+    }
+    if (body.auto_apply_claimed_coupon !== undefined) {
+      assertBoolean(body.auto_apply_claimed_coupon, "auto_apply_claimed_coupon");
     }
     if (body.promotion_code !== undefined && body.allow_promotion_codes === true) {
       throw new Error("promotion_code and allow_promotion_codes are mutually exclusive");

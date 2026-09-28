@@ -33,17 +33,23 @@ import {
   buildEazoCartCheckoutRequest,
   buildEazoCheckoutRequest,
   cancelEazoSubscription,
+  claimEazoAppCoupon,
+  createEazoAppCoupon,
   createEazoCheckoutSession,
   createEazoCartCheckoutSession,
   deriveEazoCreatorApiBase,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
   listEazoSubscriptions,
+  listEazoAppCoupons,
   requireEazoPaymentEnv,
   resumeEazoSubscription,
 } from "../payments.server";
 import {
   createEazoCancelSubscriptionRoute,
+  createEazoCouponClaimRoute,
+  createEazoCouponCreateRoute,
+  createEazoCouponListRoute,
   createEazoCheckoutRoute,
   createEazoEntitlementRoute,
   createEazoPaymentStatusRoute,
@@ -285,6 +291,25 @@ describe("Eazo Payments SDK", () => {
       metadata: { mode: "one_time", app_user_id: "app_user_test" },
       idempotency_key: "cart-once",
     });
+  });
+
+  it("auto-applies the best claimed coupon for a normal cart", () => {
+    const request = buildEazoCartCheckoutRequest({
+      items: [
+        { productKey: "notebook", productName: "Notebook", unitAmount: 1200 },
+        { productKey: "pen", productName: "Pen", unitAmount: 300 },
+      ],
+      currency: EAZO_PAYMENT_CURRENCY.USD,
+      appUserId: "app_user_test",
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+      idempotencyKey: "cart-auto-coupon",
+    });
+
+    assertEazoCheckoutRequestContract(request);
+    expect(request).toHaveProperty("auto_apply_claimed_coupon", true);
+    expect(request).not.toHaveProperty("promotion_code");
+    expect(request).not.toHaveProperty("allow_promotion_codes");
   });
 
   it("derives the Creator API base from EAZO_API_BASE", () => {
@@ -610,6 +635,65 @@ describe("Eazo Payments SDK", () => {
     expect(body.items).toHaveLength(2);
     expect(body.allow_promotion_codes).toBe(true);
     expect(body).not.toHaveProperty("unit_amount");
+  });
+
+  it("creates, lists, and claims app-scoped coupons through platform helpers", async () => {
+    const coupon = {
+      id: "cacp_test",
+      app_id: "app_test",
+      code: "SAVE20",
+      name: "Save 20%",
+      discount_type: "percent_off" as const,
+      percent_off_bps: 2000,
+      amount_off: null,
+      currency: "usd" as const,
+      minimum_amount: 1000,
+      max_claims: 100,
+      claim_count: 0,
+      remaining_claims: 100,
+      redemption_count: 0,
+      active: true,
+    };
+    mockPlatformResponse(200, { coupon, created: true });
+
+    await createEazoAppCoupon({
+      appUserId: "app_user_test",
+      code: "SAVE20",
+      name: "Save 20%",
+      discountType: "percent_off",
+      percentOffBps: 2000,
+      currency: "usd",
+      minimumAmount: 1000,
+      maxClaims: 100,
+    });
+
+    let [, request] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      app_id: "app_test",
+      app_user_id: "app_user_test",
+      code: "SAVE20",
+      discount_type: "percent_off",
+      percent_off_bps: 2000,
+    });
+
+    mockPlatformResponse(200, { items: [coupon] });
+    await listEazoAppCoupons({ appUserId: "app_user_test" });
+    expect(fetch).toHaveBeenLastCalledWith(
+      "https://dev1.eazo.ai/creator/api/open/payments/coupons?app_id=app_test&app_user_id=app_user_test&manage=false",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+
+    mockPlatformResponse(200, {
+      coupon,
+      claim: { id: "cacl_test", status: "claimed" },
+      claimed: true,
+    });
+    await claimEazoAppCoupon("cacp_test", { appUserId: "app_user_test" });
+    [, request] = vi.mocked(fetch).mock.calls.at(-1)!;
+    expect(String(request?.body)).toBe(JSON.stringify({
+      app_id: "app_test",
+      app_user_id: "app_user_test",
+    }));
   });
 
   it.each(["pending", "succeeded", "failed", "expired", "refunded", "disputed"] as const)(
@@ -1330,6 +1414,55 @@ describe("Eazo Payments SDK", () => {
     expect(body.success_url).toBe("https://app.example.com/payment/success");
   });
 
+  it("creates authenticated Next coupon routes", async () => {
+    const getUser = () => ({
+      ok: true as const,
+      user: { id: "app_user_test", email: "test@example.com", name: "Test", avatarUrl: null },
+    });
+    const coupon = {
+      id: "cacp_test",
+      app_id: "app_test",
+      code: "SAVE20",
+      name: "Save 20%",
+      discount_type: "percent_off",
+      currency: "usd",
+      minimum_amount: 0,
+      claim_count: 0,
+      redemption_count: 0,
+      active: true,
+    };
+    mockPlatformResponse(200, { coupon, created: true });
+    const couponPOST = createEazoCouponCreateRoute({ getUser });
+    const createResponse = await couponPOST(new Request("https://app.example.com/api/payments/coupons", {
+      method: "POST",
+      body: JSON.stringify({
+        code: "SAVE20",
+        name: "Save 20%",
+        discountType: "percent_off",
+        percentOffBps: 2000,
+        currency: "usd",
+      }),
+    }));
+    expect(createResponse.status).toBe(200);
+
+    mockPlatformResponse(200, { items: [coupon] });
+    const couponGET = createEazoCouponListRoute({ getUser });
+    const listResponse = await couponGET(new Request("https://app.example.com/api/payments/coupons"));
+    expect(listResponse.status).toBe(200);
+
+    mockPlatformResponse(200, {
+      coupon,
+      claim: { id: "cacl_test", status: "claimed" },
+      claimed: true,
+    });
+    const couponClaimPOST = createEazoCouponClaimRoute({ getUser });
+    const claimResponse = await couponClaimPOST(
+      new Request("https://app.example.com/api/payments/coupons/cacp_test/claim", { method: "POST" }),
+      { params: Promise.resolve({ couponId: "cacp_test" }) },
+    );
+    expect(claimResponse.status).toBe(200);
+  });
+
   it("creates Next status route handlers with exact request and response contract", async () => {
     mockPlatformResponse(200, mockEazoPaymentStatus("succeeded"));
     const GET = createEazoPaymentStatusRoute({
@@ -1511,6 +1644,10 @@ describe("Eazo Payments SDK", () => {
     expect(result.files).toContain("src/components/eazo-payments/PaymentUnlockPanel.tsx");
     expect(result.files).toContain("src/app/api/payments/checkout/route.ts");
     expect(result.files).toContain("src/app/api/payments/entitlements/route.ts");
+    expect(result.files).toContain("src/app/api/payments/cancel/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupons/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupons/[couponId]/claim/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupon-wallet/route.ts");
     const route = fs.readFileSync(
       path.join(cwd, "src/app/api/payments/checkout/route.ts"),
       "utf8",
@@ -1518,6 +1655,12 @@ describe("Eazo Payments SDK", () => {
     expect(route).toContain("@eazo/sdk/payments/next");
     expect(route).not.toContain("/api/open/payments/checkout-sessions");
     expect(route).not.toContain("unit_amount");
+    const couponsRoute = fs.readFileSync(
+      path.join(cwd, "src/app/api/payments/coupons/route.ts"),
+      "utf8",
+    );
+    expect(couponsRoute).toContain("createEazoCouponCreateRoute");
+    expect(couponsRoute).toContain("createEazoCouponListRoute");
     const successPage = fs.readFileSync(
       path.join(cwd, "src/app/payment/success/page.tsx"),
       "utf8",

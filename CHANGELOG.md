@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stripe Promotion Code support through either an app-supplied code or the
   hosted Checkout promotion-code entry field. Payment status now exposes cart
   items, all granted entitlements, and discount/redemption details.
+- App-scoped merchant coupons with owner-only creation, authenticated customer
+  claiming, coupon-wallet reads, automatic best-coupon selection, and one-use
+  redemption.
+- Checkout cancellation now expires the Stripe Session before releasing a
+  reserved App coupon back to the customer's wallet.
 
 ## [0.21.0] - 2026-06-11
 

@@ -212,6 +212,11 @@ src/components/eazo-payments/PaymentUnlockPanel.tsx
 src/app/api/payments/checkout/route.ts
 src/app/api/payments/status/route.ts
 src/app/api/payments/entitlements/route.ts
+src/app/api/payments/cancel/route.ts
+src/app/api/payments/coupons/route.ts
+src/app/api/payments/coupons/[couponId]/claim/route.ts
+src/app/api/payments/coupons/[couponId]/deactivate/route.ts
+src/app/api/payments/coupon-wallet/route.ts
 src/app/payment/success/page.tsx
 src/app/payment/cancel/page.tsx
 src/lib/eazo-payments/payment-contract.test.ts
@@ -262,14 +267,21 @@ await startEazoCartCheckout(
     { productKey: "notebook", quantity: 2 },
     { productKey: "pen", quantity: 1 },
   ],
-  { promotionCode: "SAVE20" },
 );
 ```
 
 Cart products must be one-time products in one currency. The platform creates
 one Stripe Checkout Session and one payment record, then activates each item’s
-entitlement after the unified payment succeeds. Use `allowPromotionCodes: true`
-instead of `promotionCode` when Stripe Checkout should render the code field.
+entitlement after the unified payment succeeds. By default, Eazo selects the
+claimed coupon that saves this customer the most money, reserves it for the
+Checkout, and redeems it only after payment succeeds. App owners create coupons
+with `createEazoCoupon(...)`; customers discover and claim them with
+`listEazoCoupons()` and `claimEazoCoupon(...)`, then inspect their wallet with
+`listEazoCouponWallet()`.
+
+Platform campaigns can still use `promotionCode` or
+`allowPromotionCodes: true`; those explicit Stripe modes disable claimed-coupon
+auto-application for that Checkout.
 
 For a full copyable Next.js example, see:
 

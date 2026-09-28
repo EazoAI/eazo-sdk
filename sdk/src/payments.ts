@@ -429,6 +429,7 @@ export type CreateEazoCartCheckoutInput = {
   appUserId?: string;
   promotionCode?: string;
   allowPromotionCodes?: boolean;
+  autoApplyClaimedCoupon?: boolean;
   metadata?: EazoPaymentMetadata;
   idempotencyKey?: string;
 };
@@ -467,6 +468,7 @@ export type EazoCartCheckoutSessionRequest = {
   items: EazoCheckoutSessionLineItemRequest[];
   promotion_code?: string;
   allow_promotion_codes?: boolean;
+  auto_apply_claimed_coupon?: boolean;
   metadata: EazoPaymentMetadata;
   idempotency_key: string;
 };
@@ -529,11 +531,63 @@ export type EazoPaymentStatus = {
     amount_total: number;
   }>;
   coupon?: {
+    id?: string | null;
+    claim_id?: string | null;
+    source?: "claimed" | "promotion_code";
     code?: string | null;
+    name?: string | null;
     stripe_promotion_code_id?: string | null;
     amount_discount: number;
-    status: "pending" | "redeemed" | "not_applied";
+    status: "pending" | "redeemed" | "released" | "not_applied";
   } | null;
+};
+
+export type EazoAppCoupon = {
+  id: string;
+  app_id: string;
+  code: string;
+  name: string;
+  discount_type: "percent_off" | "amount_off";
+  percent_off_bps?: number | null;
+  amount_off?: number | null;
+  currency: EazoPaymentCurrency;
+  minimum_amount: number;
+  max_claims?: number | null;
+  claim_count: number;
+  remaining_claims?: number | null;
+  claimable?: boolean;
+  redemption_count: number;
+  starts_at?: number | null;
+  expires_at?: number | null;
+  active: boolean;
+  claim?: EazoAppCouponClaim | null;
+};
+
+export type EazoAppCouponClaim = {
+  id: string;
+  coupon_id: string;
+  app_id: string;
+  app_user_id: string;
+  status: "claimed" | "reserved" | "redeemed";
+  reserved_payment_id?: string | null;
+  reserved_at?: number | null;
+  redeemed_payment_id?: string | null;
+  redeemed_at?: number | null;
+  created_at?: number | null;
+  updated_at?: number | null;
+};
+
+export type CreateEazoAppCouponInput = {
+  code: string;
+  name: string;
+  discountType: "percent_off" | "amount_off";
+  currency: EazoPaymentCurrency;
+  percentOffBps?: number;
+  amountOff?: number;
+  minimumAmount?: number;
+  maxClaims?: number;
+  startsAt?: string;
+  expiresAt?: string;
 };
 
 export type EazoAppSubscriptionStatus =
@@ -874,6 +928,7 @@ export async function startEazoCartCheckout(
   options: {
     promotionCode?: string;
     allowPromotionCodes?: boolean;
+    autoApplyClaimedCoupon?: boolean;
     redirect?: EazoCheckoutRedirect;
   } = {},
 ) {
@@ -895,6 +950,9 @@ export async function startEazoCartCheckout(
       items,
       ...(options.promotionCode ? { promotionCode: options.promotionCode } : {}),
       ...(options.allowPromotionCodes ? { allowPromotionCodes: true } : {}),
+      ...(options.autoApplyClaimedCoupon === undefined
+        ? {}
+        : { autoApplyClaimedCoupon: options.autoApplyClaimedCoupon }),
     }),
   });
   const data = await response.json().catch(() => ({}));
@@ -906,4 +964,54 @@ export async function startEazoCartCheckout(
   (options.redirect || ((checkoutUrl) => window.location.assign(checkoutUrl)))(
     checkout.checkoutUrl,
   );
+}
+
+async function eazoPaymentClientRequest(path: string, init?: RequestInit) {
+  await auth.login();
+  const sessionHeader = await auth.getSessionHeader();
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(sessionHeader ? { "x-eazo-session": sessionHeader } : {}),
+      ...(init?.headers || {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(checkoutErrorMessage(data));
+  return data;
+}
+
+export function createEazoCoupon(input: CreateEazoAppCouponInput) {
+  return eazoPaymentClientRequest("/api/payments/coupons", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }) as Promise<{ coupon: EazoAppCoupon; created: boolean }>;
+}
+
+export function listEazoCoupons(options: { manage?: boolean } = {}) {
+  const query = options.manage ? "?manage=true" : "";
+  return eazoPaymentClientRequest(`/api/payments/coupons${query}`, {
+    cache: "no-store",
+  }) as Promise<{ items: EazoAppCoupon[] }>;
+}
+
+export function claimEazoCoupon(couponId: string) {
+  return eazoPaymentClientRequest(
+    `/api/payments/coupons/${encodeURIComponent(couponId)}/claim`,
+    { method: "POST" },
+  ) as Promise<{ coupon: EazoAppCoupon; claim: EazoAppCouponClaim; claimed: boolean }>;
+}
+
+export function listEazoCouponWallet() {
+  return eazoPaymentClientRequest("/api/payments/coupon-wallet", {
+    cache: "no-store",
+  }) as Promise<{ items: Array<{ coupon: EazoAppCoupon; claim: EazoAppCouponClaim }> }>;
+}
+
+export function deactivateEazoCoupon(couponId: string) {
+  return eazoPaymentClientRequest(
+    `/api/payments/coupons/${encodeURIComponent(couponId)}/deactivate`,
+    { method: "POST" },
+  ) as Promise<{ coupon: EazoAppCoupon }>;
 }
