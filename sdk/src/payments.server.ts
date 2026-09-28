@@ -9,6 +9,7 @@ import {
   normalizeEazoCheckoutResult,
   type EazoAppSubscription,
   type EazoAppSubscriptionsResponse,
+  type CreateEazoCartCheckoutInput,
   type CreateEazoCheckoutInput,
   type CreateEazoCheckoutResult,
   type EazoCheckoutSessionRequest,
@@ -139,12 +140,89 @@ export function buildEazoCheckoutRequest(
   };
 }
 
-export async function createEazoCheckoutSession(
-  input: CreateEazoCheckoutInput,
+export function buildEazoCartCheckoutRequest(
+  input: CreateEazoCartCheckoutInput,
+): EazoCheckoutSessionRequest {
+  const { appId } = requireEazoPaymentEnv();
+  assertEazoPaymentCurrency(input.currency);
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new Error("items must contain at least one product");
+  }
+  if (input.items.length > 100) {
+    throw new Error("items must contain at most 100 products");
+  }
+  if (input.promotionCode && input.allowPromotionCodes) {
+    throw new Error("promotionCode and allowPromotionCodes are mutually exclusive");
+  }
+
+  const seenProductKeys = new Set<string>();
+  const items = input.items.map((item) => {
+    assertEazoPaymentProductKey(item.productKey, "product key");
+    if (seenProductKeys.has(item.productKey)) {
+      throw new Error(`duplicate product key: ${item.productKey}`);
+    }
+    seenProductKeys.add(item.productKey);
+    const entitlementKey = item.entitlementKey || item.productKey;
+    assertEazoPaymentProductKey(entitlementKey, "entitlement key");
+    assertEazoPaymentUnitAmount(item.unitAmount, input.currency);
+    if (!item.productName || typeof item.productName !== "string") {
+      throw new Error("productName is required for every item");
+    }
+    const quantity = item.quantity ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      throw new Error("quantity must be an integer between 1 and 999");
+    }
+    return {
+      product_key: item.productKey,
+      entitlement_key: entitlementKey,
+      product_name: item.productName,
+      unit_amount: item.unitAmount,
+      quantity,
+    };
+  });
+  const amountSubtotal = items.reduce(
+    (total, item) => total + item.unit_amount * item.quantity,
+    0,
+  );
+  const maximumUnitAmount = getEazoPaymentPriceLimits(input.currency).maximumUnitAmount;
+  if (amountSubtotal > maximumUnitAmount) {
+    throw new Error(
+      `checkout total for ${input.currency.toUpperCase()} must not exceed ${maximumUnitAmount} in minor currency units`,
+    );
+  }
+  const cartFingerprint = items
+    .map((item) => `${item.product_key}:${item.quantity}`)
+    .join(",");
+
+  return {
+    app_id: appId,
+    ...(input.appUserId ? { app_user_id: input.appUserId } : {}),
+    mode: EAZO_PAYMENT_MODE.ONE_TIME,
+    currency: input.currency,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    items,
+    ...(input.promotionCode ? { promotion_code: input.promotionCode } : {}),
+    ...(input.allowPromotionCodes ? { allow_promotion_codes: true } : {}),
+    metadata: {
+      mode: EAZO_PAYMENT_MODE.ONE_TIME,
+      ...(input.appUserId ? { app_user_id: input.appUserId } : {}),
+      ...(input.metadata || {}),
+    },
+    idempotency_key:
+      input.idempotencyKey ||
+      createStableCheckoutIdempotencyKey(
+        appId,
+        `cart:${cartFingerprint}`,
+        input.appUserId || input.metadata?.user_id,
+      ),
+  };
+}
+
+async function postEazoCheckoutSession(
+  requestBody: EazoCheckoutSessionRequest,
 ): Promise<CreateEazoCheckoutResult> {
   const { apiBase, privateKey } = requireEazoPaymentEnv();
-  const requestBody = buildEazoCheckoutRequest(input);
-
   const response = await fetch(`${apiBase}/api/open/payments/checkout-sessions`, {
     method: "POST",
     headers: {
@@ -163,8 +241,19 @@ export async function createEazoCheckoutSession(
   if (!checkout) {
     throw new EazoPaymentApiError(response.status, data, "Checkout response missing checkoutUrl or paymentId");
   }
-
   return checkout;
+}
+
+export async function createEazoCheckoutSession(
+  input: CreateEazoCheckoutInput,
+): Promise<CreateEazoCheckoutResult> {
+  return postEazoCheckoutSession(buildEazoCheckoutRequest(input));
+}
+
+export async function createEazoCartCheckoutSession(
+  input: CreateEazoCartCheckoutInput,
+): Promise<CreateEazoCheckoutResult> {
+  return postEazoCheckoutSession(buildEazoCartCheckoutRequest(input));
 }
 
 export async function getEazoPaymentStatus(
@@ -282,6 +371,7 @@ export function resumeEazoSubscription(
 }
 
 export type {
+  CreateEazoCartCheckoutInput,
   CreateEazoCheckoutInput,
   CreateEazoCheckoutResult,
   EazoCheckoutSessionRequest,
@@ -294,6 +384,7 @@ export type {
   EazoPaymentMode,
   EazoPaymentApiErrorBody,
   EazoPaymentCurrency,
+  EazoPaymentLedgerMetadata,
   EazoPaymentMetadata,
   EazoPaymentProduct,
   EazoPaymentStatus,

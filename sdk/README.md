@@ -250,6 +250,27 @@ import { getPaymentProduct } from "@/lib/eazo-payments/catalog";
 export const POST = createEazoCheckoutRoute({ getProduct: getPaymentProduct });
 ```
 
+The same route handles a unified one-time cart checkout. All items are resolved
+from the server-side catalog, so browser code sends only stable product keys,
+quantities, and an optional customer-facing Promotion Code:
+
+```ts
+import { startEazoCartCheckout } from "@eazo/sdk/payments";
+
+await startEazoCartCheckout(
+  [
+    { productKey: "notebook", quantity: 2 },
+    { productKey: "pen", quantity: 1 },
+  ],
+  { promotionCode: "SAVE20" },
+);
+```
+
+Cart products must be one-time products in one currency. The platform creates
+one Stripe Checkout Session and one payment record, then activates each item’s
+entitlement after the unified payment succeeds. Use `allowPromotionCodes: true`
+instead of `promotionCode` when Stripe Checkout should render the code field.
+
 For a full copyable Next.js example, see:
 
 ```text

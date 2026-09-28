@@ -63,12 +63,22 @@ export function EazoPaymentSuccessPage({
       const nextStatus = data as EazoPaymentStatus;
       setStatus(nextStatus);
       if (nextStatus.paid) {
-        const productKey =
-          nextStatus.entitlement?.product_key ||
-          nextStatus.metadata?.product_key ||
-          new URLSearchParams(window.location.search).get("product") ||
-          "premium";
-        await refreshEazoEntitlement(productKey);
+        const productKeys = Array.from(new Set(
+          (nextStatus.entitlements || [])
+            .map((entitlement) => entitlement.product_key)
+            .filter(Boolean),
+        ));
+        if (productKeys.length === 0) {
+          productKeys.push(
+            nextStatus.entitlement?.product_key ||
+            (typeof nextStatus.metadata?.product_key === "string"
+              ? nextStatus.metadata.product_key
+              : null) ||
+            new URLSearchParams(window.location.search).get("product") ||
+            "premium",
+          );
+        }
+        await Promise.all(productKeys.map((productKey) => refreshEazoEntitlement(productKey)));
         clearRememberedEazoPaymentId();
         return;
       }

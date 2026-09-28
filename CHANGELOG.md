@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Payment Kit cart checkout support: one authenticated checkout can contain
+  multiple one-time catalog products and quantities, with one shared currency.
+- Stripe Promotion Code support through either an app-supplied code or the
+  hosted Checkout promotion-code entry field. Payment status now exposes cart
+  items, all granted entitlements, and discount/redemption details.
+
 ## [0.21.0] - 2026-06-11
 
 ### Changed

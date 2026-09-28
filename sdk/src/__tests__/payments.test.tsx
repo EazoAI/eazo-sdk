@@ -26,12 +26,15 @@ import {
   readEazoPaymentIdFromUrl,
   readRememberedEazoPaymentId,
   rememberEazoPaymentId,
+  startEazoCartCheckout,
   startEazoCheckout,
 } from "../payments";
 import {
+  buildEazoCartCheckoutRequest,
   buildEazoCheckoutRequest,
   cancelEazoSubscription,
   createEazoCheckoutSession,
+  createEazoCartCheckoutSession,
   deriveEazoCreatorApiBase,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
@@ -228,6 +231,60 @@ describe("Eazo Payments SDK", () => {
       },
     });
     assertEazoCheckoutRequestContract(request);
+  });
+
+  it("builds a unified cart checkout DTO with a promotion code", () => {
+    const request = buildEazoCartCheckoutRequest({
+      items: [
+        {
+          productKey: "notebook",
+          productName: "Notebook",
+          unitAmount: 1200,
+          quantity: 2,
+        },
+        {
+          productKey: "pen",
+          productName: "Pen",
+          unitAmount: 300,
+          entitlementKey: "writing_tools",
+        },
+      ],
+      currency: EAZO_PAYMENT_CURRENCY.USD,
+      appUserId: "app_user_test",
+      promotionCode: "SAVE20",
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+      idempotencyKey: "cart-once",
+    });
+
+    assertEazoCheckoutRequestContract(request);
+    expect(request).toEqual({
+      app_id: "app_test",
+      app_user_id: "app_user_test",
+      mode: "one_time",
+      currency: "usd",
+      success_url: "https://app.example.com/payment/success",
+      cancel_url: "https://app.example.com/payment/cancel",
+      items: [
+        {
+          product_key: "notebook",
+          entitlement_key: "notebook",
+          product_name: "Notebook",
+          unit_amount: 1200,
+          quantity: 2,
+        },
+        {
+          product_key: "pen",
+          entitlement_key: "writing_tools",
+          product_name: "Pen",
+          unit_amount: 300,
+          quantity: 1,
+        },
+      ],
+      promotion_code: "SAVE20",
+      metadata: { mode: "one_time", app_user_id: "app_user_test" },
+      idempotency_key: "cart-once",
+    });
   });
 
   it("derives the Creator API base from EAZO_API_BASE", () => {
@@ -530,6 +587,31 @@ describe("Eazo Payments SDK", () => {
     });
   });
 
+  it("posts one platform checkout for all cart products", async () => {
+    mockPlatformResponse(200, mockEazoCheckoutResponse());
+
+    const result = await createEazoCartCheckoutSession({
+      items: [
+        { productKey: "notebook", productName: "Notebook", unitAmount: 1200 },
+        { productKey: "pen", productName: "Pen", unitAmount: 300, quantity: 2 },
+      ],
+      currency: "usd",
+      appUserId: "app_user_test",
+      allowPromotionCodes: true,
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+      idempotencyKey: "cart-once",
+    });
+
+    expect(result.paymentId).toBe("cap_test_eazo");
+    const [, request] = vi.mocked(fetch).mock.calls[0];
+    const body = JSON.parse(String(request?.body));
+    assertEazoCheckoutRequestContract(body);
+    expect(body.items).toHaveLength(2);
+    expect(body.allow_promotion_codes).toBe(true);
+    expect(body).not.toHaveProperty("unit_amount");
+  });
+
   it.each(["pending", "succeeded", "failed", "expired", "refunded", "disputed"] as const)(
     "reads %s payment status",
     async (status) => {
@@ -637,6 +719,45 @@ describe("Eazo Payments SDK", () => {
     assertLocalCheckoutBodyContract(JSON.parse(String(request?.body)));
     expect(readRememberedEazoPaymentId()).toBe("cap_test_eazo");
     expect(redirect).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_test");
+  });
+
+  it("starts a cart checkout through the same local route", async () => {
+    vi.spyOn(auth, "login").mockResolvedValue({
+      id: "user_test",
+      email: "test@example.com",
+      name: "Test",
+      avatarUrl: null,
+    });
+    vi.spyOn(auth, "getSessionHeader").mockResolvedValue("session_test");
+    mockPlatformResponse(200, {
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_cart",
+      paymentId: "cap_cart",
+    });
+    const redirect = vi.fn();
+
+    await startEazoCartCheckout(
+      [
+        { productKey: "notebook", quantity: 2 },
+        { productKey: "pen" },
+      ],
+      { promotionCode: "SAVE20", redirect },
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/payments/checkout",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          items: [
+            { productKey: "notebook", quantity: 2 },
+            { productKey: "pen" },
+          ],
+          promotionCode: "SAVE20",
+        }),
+      }),
+    );
+    expect(readRememberedEazoPaymentId()).toBe("cap_cart");
+    expect(redirect).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_cart");
   });
 
   it("normalizes local checkout responses from snake_case or camelCase fields", async () => {
@@ -771,6 +892,51 @@ describe("Eazo Payments SDK", () => {
     expect(await screen.findByText("Access ready")).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith("/api/payments/status?paymentId=cap_mobile", {
       headers: { "x-eazo-session": JSON.stringify(mobileSession) },
+      cache: "no-store",
+    });
+  });
+
+  it("refreshes every cart entitlement after unified payment succeeds", async () => {
+    seedWebSession();
+    window.history.pushState({}, "", "/payment/success?payment_id=cap_cart");
+    const paymentStatus = {
+      ...mockEazoPaymentStatus("succeeded"),
+      entitlements: [
+        mockEazoEntitlement("active", { product_key: "notebook" }),
+        mockEazoEntitlement("active", { product_key: "pen" }),
+      ],
+    };
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(paymentStatus), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoEntitlement("active", { product_key: "notebook" })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEazoEntitlement("active", { product_key: "pen" })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ) as unknown as typeof fetch;
+
+    render(<EazoPaymentSuccessPage />);
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/payments/entitlements?productKey=notebook", {
+        headers: { "x-eazo-session": expect.any(String) },
+        cache: "no-store",
+      });
+    });
+    expect(fetch).toHaveBeenCalledWith("/api/payments/entitlements?productKey=pen", {
+      headers: { "x-eazo-session": expect.any(String) },
       cache: "no-store",
     });
   });
@@ -1100,6 +1266,68 @@ describe("Eazo Payments SDK", () => {
     expect(body.cancel_url).toBe("https://3000-i3oy5n5r1j67jd3jn609o.e2b.app/payment/cancel?product=premium");
     expect(body.success_url).not.toContain("0.0.0.0");
     expect(body.cancel_url).not.toContain("0.0.0.0");
+  });
+
+  it("creates one Next checkout for multiple catalog products and a coupon", async () => {
+    const products = defineEazoPaymentProducts({
+      notebook: {
+        key: "notebook",
+        name: "Notebook",
+        unitAmount: 1200,
+        currency: EAZO_PAYMENT_CURRENCY.USD,
+        mode: EAZO_PAYMENT_MODE.ONE_TIME,
+      },
+      pen: {
+        key: "pen",
+        name: "Pen",
+        unitAmount: 300,
+        currency: EAZO_PAYMENT_CURRENCY.USD,
+        mode: EAZO_PAYMENT_MODE.ONE_TIME,
+        entitlementKey: "writing_tools",
+      },
+    } as const);
+    mockPlatformResponse(200, mockEazoCheckoutResponse());
+    const POST = createEazoCheckoutRoute({
+      getUser: () => ({
+        ok: true,
+        user: { id: "app_user_test", email: "test@example.com", name: "Test", avatarUrl: null },
+      }),
+      getProduct: (key) => products[key as keyof typeof products] || null,
+    });
+
+    const response = await POST(new Request("https://app.example.com/api/payments/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        items: [
+          { productKey: "notebook", quantity: 2 },
+          { productKey: "pen", quantity: 1 },
+        ],
+        promotionCode: "SAVE20",
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    const [, request] = vi.mocked(fetch).mock.calls[0];
+    const body = JSON.parse(String(request?.body));
+    assertEazoCheckoutRequestContract(body);
+    expect(body.items).toEqual([
+      {
+        product_key: "notebook",
+        entitlement_key: "notebook",
+        product_name: "Notebook",
+        unit_amount: 1200,
+        quantity: 2,
+      },
+      {
+        product_key: "pen",
+        entitlement_key: "writing_tools",
+        product_name: "Pen",
+        unit_amount: 300,
+        quantity: 1,
+      },
+    ]);
+    expect(body.promotion_code).toBe("SAVE20");
+    expect(body.success_url).toBe("https://app.example.com/payment/success");
   });
 
   it("creates Next status route handlers with exact request and response contract", async () => {

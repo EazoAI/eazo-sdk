@@ -24,7 +24,7 @@ function createMemoryStorage(): Storage {
 
 function ensureStorage(name: "localStorage" | "sessionStorage") {
   if (typeof window === "undefined") return;
-  if (window[name]) return;
+  if (window[name] && typeof window[name].clear === "function") return;
   Object.defineProperty(window, name, {
     configurable: true,
     value: createMemoryStorage(),

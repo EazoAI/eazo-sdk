@@ -377,6 +377,7 @@ export type EazoEntitlementStatusValue =
   | "disputed";
 
 export type EazoPaymentMetadata = Record<string, string>;
+export type EazoPaymentLedgerMetadata = Record<string, unknown>;
 
 export type EazoPaymentProduct = {
   key: string;
@@ -412,7 +413,35 @@ export type CreateEazoCheckoutInput = {
   idempotencyKey?: string;
 };
 
-export type EazoCheckoutSessionRequest = {
+export type EazoCheckoutItemInput = {
+  productKey: string;
+  productName: string;
+  unitAmount: number;
+  entitlementKey?: string;
+  quantity?: number;
+};
+
+export type CreateEazoCartCheckoutInput = {
+  items: EazoCheckoutItemInput[];
+  currency: EazoPaymentCurrency;
+  successUrl: string;
+  cancelUrl: string;
+  appUserId?: string;
+  promotionCode?: string;
+  allowPromotionCodes?: boolean;
+  metadata?: EazoPaymentMetadata;
+  idempotencyKey?: string;
+};
+
+export type EazoCheckoutSessionLineItemRequest = {
+  product_key: string;
+  entitlement_key: string;
+  product_name: string;
+  unit_amount: number;
+  quantity: number;
+};
+
+export type EazoSingleCheckoutSessionRequest = {
   app_id: string;
   app_user_id?: string;
   product_key: string;
@@ -427,6 +456,24 @@ export type EazoCheckoutSessionRequest = {
   metadata: EazoPaymentMetadata;
   idempotency_key: string;
 };
+
+export type EazoCartCheckoutSessionRequest = {
+  app_id: string;
+  app_user_id?: string;
+  mode: "one_time";
+  currency: EazoPaymentCurrency;
+  success_url: string;
+  cancel_url: string;
+  items: EazoCheckoutSessionLineItemRequest[];
+  promotion_code?: string;
+  allow_promotion_codes?: boolean;
+  metadata: EazoPaymentMetadata;
+  idempotency_key: string;
+};
+
+export type EazoCheckoutSessionRequest =
+  | EazoSingleCheckoutSessionRequest
+  | EazoCartCheckoutSessionRequest;
 
 export type EazoCheckoutSessionResponse = {
   checkout_session_id: string;
@@ -456,7 +503,7 @@ export type EazoEntitlement = {
   payment_id?: string | null;
   source_payment_id?: string | null;
   current_period_end?: number | null;
-  metadata?: EazoPaymentMetadata;
+  metadata?: EazoPaymentLedgerMetadata;
   updated_at?: number | null;
 };
 
@@ -465,11 +512,28 @@ export type EazoPaymentStatus = {
   app_id: string;
   status: EazoPaymentStatusValue;
   paid: boolean;
+  amount_subtotal?: number;
+  amount_discount?: number;
   amount_total: number;
   currency: EazoPaymentCurrency;
   product_name: string;
-  metadata: EazoPaymentMetadata;
+  metadata: EazoPaymentLedgerMetadata;
   entitlement?: EazoEntitlement | null;
+  entitlements?: EazoEntitlement[];
+  items?: Array<{
+    product_key: string;
+    entitlement_key: string;
+    product_name: string;
+    unit_amount: number;
+    quantity: number;
+    amount_total: number;
+  }>;
+  coupon?: {
+    code?: string | null;
+    stripe_promotion_code_id?: string | null;
+    amount_discount: number;
+    status: "pending" | "redeemed" | "not_applied";
+  } | null;
 };
 
 export type EazoAppSubscriptionStatus =
@@ -657,6 +721,11 @@ const LAST_PAYMENT_RECORD_KEY = "eazo:lastPayment";
 
 export type EazoCheckoutRedirect = (checkoutUrl: string) => void;
 
+export type EazoCartSelectionItem = {
+  productKey: string;
+  quantity?: number;
+};
+
 type StoredPayment = {
   paymentId: string;
   createdAt: number;
@@ -798,4 +867,43 @@ export async function startEazoCheckout(
 
   rememberEazoPaymentId(checkout.paymentId);
   redirect(checkout.checkoutUrl);
+}
+
+export async function startEazoCartCheckout(
+  items: EazoCartSelectionItem[],
+  options: {
+    promotionCode?: string;
+    allowPromotionCodes?: boolean;
+    redirect?: EazoCheckoutRedirect;
+  } = {},
+) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Cart must contain at least one product");
+  }
+  if (options.promotionCode && options.allowPromotionCodes) {
+    throw new Error("promotionCode and allowPromotionCodes are mutually exclusive");
+  }
+  await auth.login();
+  const sessionHeader = await auth.getSessionHeader();
+  const response = await fetch("/api/payments/checkout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionHeader ? { "x-eazo-session": sessionHeader } : {}),
+    },
+    body: JSON.stringify({
+      items,
+      ...(options.promotionCode ? { promotionCode: options.promotionCode } : {}),
+      ...(options.allowPromotionCodes ? { allowPromotionCodes: true } : {}),
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  const checkout = normalizeEazoCheckoutResult(data as EazoCheckoutSessionResponseLike);
+  if (!response.ok || !checkout) {
+    throw new Error(checkoutErrorMessage(data));
+  }
+  rememberEazoPaymentId(checkout.paymentId);
+  (options.redirect || ((checkoutUrl) => window.location.assign(checkoutUrl)))(
+    checkout.checkoutUrl,
+  );
 }

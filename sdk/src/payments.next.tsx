@@ -4,6 +4,7 @@ import {
 } from "./payments";
 import {
   cancelEazoSubscription,
+  createEazoCartCheckoutSession,
   createEazoCheckoutSession,
   getEazoEntitlementStatus,
   getEazoPaymentStatus,
@@ -121,22 +122,109 @@ function firstBodyString(body: JsonBody, names: readonly string[]) {
   return null;
 }
 
+function firstBodyBoolean(body: JsonBody, names: readonly string[]) {
+  for (const name of names) {
+    const value = body[name];
+    if (typeof value === "boolean") return value;
+  }
+  return false;
+}
+
+function readCartItems(body: JsonBody) {
+  if (!Array.isArray(body.items)) return [];
+  return body.items.map((value) => {
+    const item = value && typeof value === "object" ? value as JsonBody : {};
+    const productKey = firstBodyString(item, ["productKey", "product_key", "key"]);
+    const quantity = item.quantity === undefined ? 1 : item.quantity;
+    return { productKey, quantity };
+  });
+}
+
 export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
   return async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const bodyRecord = body && typeof body === "object" ? body as JsonBody : {};
+    const hasCartItems = Array.isArray(bodyRecord.items);
+    const requestedItems = readCartItems(bodyRecord);
     const productKey = firstBodyString(bodyRecord, ["productKey", "product_key", "key"]) || "premium";
-    const product = options.getProduct(productKey);
-
-    if (!product) {
-      return jsonResponse({ error: "Unknown product" }, { status: 400 });
-    }
 
     const authResult = options.getUser ? options.getUser(request) : requireAuth(request);
     if (!authResult.ok) return authResult.response;
 
     try {
       const origin = getRequestOrigin(request);
+      if (hasCartItems && requestedItems.length === 0) {
+        return jsonResponse({ error: "Cart must contain at least one product" }, { status: 400 });
+      }
+      if (requestedItems.length > 0) {
+        if (requestedItems.length > 100) {
+          return jsonResponse({ error: "Cart supports at most 100 products" }, { status: 400 });
+        }
+        if (requestedItems.some((item) => !item.productKey)) {
+          return jsonResponse({ error: "Every cart item requires productKey" }, { status: 400 });
+        }
+        if (requestedItems.some((item) => !Number.isInteger(item.quantity) || Number(item.quantity) < 1 || Number(item.quantity) > 999)) {
+          return jsonResponse({ error: "Every cart quantity must be an integer between 1 and 999" }, { status: 400 });
+        }
+        const requestedProductKeys = requestedItems.map((item) => item.productKey || "");
+        if (new Set(requestedProductKeys).size !== requestedProductKeys.length) {
+          return jsonResponse({ error: "Cart product keys must be unique" }, { status: 400 });
+        }
+        const products = requestedItems.map((item) => options.getProduct(item.productKey || ""));
+        if (products.some((product) => !product)) {
+          return jsonResponse({ error: "Unknown product" }, { status: 400 });
+        }
+        const resolvedProducts = products as EazoPaymentProduct[];
+        if (resolvedProducts.some((product) => (product.mode || "one_time") !== "one_time")) {
+          return jsonResponse(
+            { error: "Cart checkout supports one-time products only" },
+            { status: 400 },
+          );
+        }
+        const currencies = new Set(resolvedProducts.map((product) => product.currency));
+        if (currencies.size !== 1) {
+          return jsonResponse(
+            { error: "All cart products must use the same currency" },
+            { status: 400 },
+          );
+        }
+        const promotionCode = firstBodyString(
+          bodyRecord,
+          ["promotionCode", "promotion_code"],
+        );
+        const allowPromotionCodes = firstBodyBoolean(
+          bodyRecord,
+          ["allowPromotionCodes", "allow_promotion_codes"],
+        );
+        if (promotionCode && allowPromotionCodes) {
+          return jsonResponse(
+            { error: "promotionCode and allowPromotionCodes are mutually exclusive" },
+            { status: 400 },
+          );
+        }
+        const checkout = await createEazoCartCheckoutSession({
+          items: resolvedProducts.map((product, index) => ({
+            productKey: product.key,
+            productName: product.name,
+            unitAmount: product.unitAmount,
+            entitlementKey: product.entitlementKey || product.key,
+            quantity: Number(requestedItems[index]?.quantity || 1),
+          })),
+          currency: resolvedProducts[0].currency,
+          appUserId: authResult.user.id,
+          successUrl: `${origin}/payment/success`,
+          cancelUrl: `${origin}/payment/cancel`,
+          ...(promotionCode ? { promotionCode } : {}),
+          ...(allowPromotionCodes ? { allowPromotionCodes: true } : {}),
+          metadata: { mode: "one_time" },
+        });
+        return jsonResponse(checkout);
+      }
+
+      const product = options.getProduct(productKey);
+      if (!product) {
+        return jsonResponse({ error: "Unknown product" }, { status: 400 });
+      }
       const checkout = await createEazoCheckoutSession({
         productKey: product.key,
         productName: product.name,

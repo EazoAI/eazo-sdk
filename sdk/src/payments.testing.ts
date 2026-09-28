@@ -163,9 +163,76 @@ function assertMetadata(value: unknown, name: string) {
   }
 }
 
+function assertLedgerMetadata(value: unknown, name: string) {
+  assertRecord(value, name);
+}
+
 export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRequest) {
   const body = request as unknown as Record<string, unknown>;
   const serialized = JSON.stringify(body);
+  if (Array.isArray(body.items)) {
+    const expectedKeys = [
+      "app_id",
+      ...(body.app_user_id === undefined ? [] : ["app_user_id"]),
+      "mode",
+      "currency",
+      "success_url",
+      "cancel_url",
+      "items",
+      ...(body.promotion_code === undefined ? [] : ["promotion_code"]),
+      ...(body.allow_promotion_codes === undefined ? [] : ["allow_promotion_codes"]),
+      "metadata",
+      "idempotency_key",
+    ];
+    assertExactKeys(body, expectedKeys, "Eazo cart checkout request");
+    assertString(body.app_id, "app_id");
+    if (body.app_user_id !== undefined) assertString(body.app_user_id, "app_user_id");
+    if (body.mode !== "one_time") {
+      throw new Error("Eazo cart checkout supports one_time mode only");
+    }
+    assertCurrency(body.currency, "currency");
+    if (body.items.length === 0 || body.items.length > 100) {
+      throw new Error("Eazo cart checkout must include 1-100 items");
+    }
+    let amountSubtotal = 0;
+    for (const [index, rawItem] of body.items.entries()) {
+      assertRecord(rawItem, `items[${index}]`);
+      assertExactKeys(
+        rawItem,
+        ["product_key", "entitlement_key", "product_name", "unit_amount", "quantity"],
+        `items[${index}]`,
+      );
+      assertString(rawItem.product_key, `items[${index}].product_key`);
+      assertString(rawItem.entitlement_key, `items[${index}].entitlement_key`);
+      assertString(rawItem.product_name, `items[${index}].product_name`);
+      assertNumber(rawItem.unit_amount, `items[${index}].unit_amount`);
+      assertNumber(rawItem.quantity, `items[${index}].quantity`);
+      assertEazoPaymentUnitAmount(
+        rawItem.unit_amount,
+        body.currency,
+        `items[${index}].unit_amount`,
+      );
+      amountSubtotal += (rawItem.unit_amount as number) * (rawItem.quantity as number);
+    }
+    const maximumUnitAmount = getEazoPaymentPriceLimits(body.currency).maximumUnitAmount;
+    if (amountSubtotal > maximumUnitAmount) {
+      throw new Error(
+        `checkout total for ${body.currency.toUpperCase()} must not exceed ${maximumUnitAmount} in minor currency units`,
+      );
+    }
+    if (body.promotion_code !== undefined) assertString(body.promotion_code, "promotion_code");
+    if (body.allow_promotion_codes !== undefined) {
+      assertBoolean(body.allow_promotion_codes, "allow_promotion_codes");
+    }
+    if (body.promotion_code !== undefined && body.allow_promotion_codes === true) {
+      throw new Error("promotion_code and allow_promotion_codes are mutually exclusive");
+    }
+    assertString(body.success_url, "success_url");
+    assertString(body.cancel_url, "cancel_url");
+    assertMetadata(body.metadata, "metadata");
+    assertString(body.idempotency_key, "idempotency_key");
+    return;
+  }
   const expectedKeys = [
     "app_id",
     ...(body.app_user_id === undefined ? [] : ["app_user_id"]),
@@ -253,11 +320,16 @@ export function assertEazoPaymentStatusContract(status: EazoPaymentStatus) {
       "app_id",
       "status",
       "paid",
+      ...(body.amount_subtotal === undefined ? [] : ["amount_subtotal"]),
+      ...(body.amount_discount === undefined ? [] : ["amount_discount"]),
       "amount_total",
       "currency",
       "product_name",
       "metadata",
       ...(body.entitlement === undefined ? [] : ["entitlement"]),
+      ...(body.entitlements === undefined ? [] : ["entitlements"]),
+      ...(body.items === undefined ? [] : ["items"]),
+      ...(body.coupon === undefined ? [] : ["coupon"]),
     ],
     "Eazo payment status",
   );
@@ -267,12 +339,28 @@ export function assertEazoPaymentStatusContract(status: EazoPaymentStatus) {
     throw new Error("status must be a supported payment status");
   }
   assertBoolean(body.paid, "paid");
+  if (body.amount_subtotal !== undefined) assertNumber(body.amount_subtotal, "amount_subtotal");
+  if (body.amount_discount !== undefined) assertNumber(body.amount_discount, "amount_discount");
   assertNumber(body.amount_total, "amount_total");
   assertCurrency(body.currency, "currency");
   assertString(body.product_name, "product_name");
-  assertMetadata(body.metadata, "metadata");
+  assertLedgerMetadata(body.metadata, "metadata");
   if (body.entitlement !== undefined && body.entitlement !== null) {
     assertEazoEntitlementContract(body.entitlement as EazoEntitlement);
+  }
+  if (body.entitlements !== undefined) {
+    if (!Array.isArray(body.entitlements)) throw new Error("entitlements must be an array");
+    for (const entitlement of body.entitlements) {
+      assertEazoEntitlementContract(entitlement as EazoEntitlement);
+    }
+  }
+  if (body.items !== undefined && !Array.isArray(body.items)) {
+    throw new Error("items must be an array");
+  }
+  if (body.coupon !== undefined && body.coupon !== null) {
+    assertRecord(body.coupon, "coupon");
+    assertNumber(body.coupon.amount_discount, "coupon.amount_discount");
+    assertString(body.coupon.status, "coupon.status");
   }
 }
 
@@ -306,7 +394,7 @@ export function assertEazoEntitlementContract(entitlement: EazoEntitlement) {
   assertNullableString(body.payment_id, "payment_id");
   assertNullableString(body.source_payment_id, "source_payment_id");
   assertNullableNumber(body.current_period_end, "current_period_end");
-  if (body.metadata !== undefined) assertMetadata(body.metadata, "metadata");
+  if (body.metadata !== undefined) assertLedgerMetadata(body.metadata, "metadata");
   assertNullableNumber(body.updated_at, "updated_at");
 }
 
