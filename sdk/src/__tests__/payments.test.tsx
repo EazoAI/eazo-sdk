@@ -239,7 +239,7 @@ describe("Eazo Payments SDK", () => {
     assertEazoCheckoutRequestContract(request);
   });
 
-  it("builds a unified cart checkout DTO with a promotion code", () => {
+  it("builds a unified cart checkout DTO", () => {
     const request = buildEazoCartCheckoutRequest({
       items: [
         {
@@ -257,7 +257,6 @@ describe("Eazo Payments SDK", () => {
       ],
       currency: EAZO_PAYMENT_CURRENCY.USD,
       appUserId: "app_user_test",
-      promotionCode: "SAVE20",
       successUrl: "https://app.example.com/payment/success",
       cancelUrl: "https://app.example.com/payment/cancel",
       idempotencyKey: "cart-once",
@@ -287,13 +286,12 @@ describe("Eazo Payments SDK", () => {
           quantity: 1,
         },
       ],
-      promotion_code: "SAVE20",
       metadata: { mode: "one_time", app_user_id: "app_user_test" },
       idempotency_key: "cart-once",
     });
   });
 
-  it("auto-applies the best claimed coupon for a normal cart", () => {
+  it("does not apply claimed coupons unless the App enables them", () => {
     const request = buildEazoCartCheckoutRequest({
       items: [
         { productKey: "notebook", productName: "Notebook", unitAmount: 1200 },
@@ -307,9 +305,25 @@ describe("Eazo Payments SDK", () => {
     });
 
     assertEazoCheckoutRequestContract(request);
+    expect(request).not.toHaveProperty("auto_apply_claimed_coupon");
+  });
+
+  it("enables claimed-coupon checkout explicitly", () => {
+    const request = buildEazoCartCheckoutRequest({
+      items: [
+        { productKey: "notebook", productName: "Notebook", unitAmount: 1200 },
+        { productKey: "pen", productName: "Pen", unitAmount: 300 },
+      ],
+      currency: EAZO_PAYMENT_CURRENCY.USD,
+      appUserId: "app_user_test",
+      successUrl: "https://app.example.com/payment/success",
+      cancelUrl: "https://app.example.com/payment/cancel",
+      autoApplyClaimedCoupon: true,
+      idempotencyKey: "cart-coupon-enabled",
+    });
+
+    assertEazoCheckoutRequestContract(request);
     expect(request).toHaveProperty("auto_apply_claimed_coupon", true);
-    expect(request).not.toHaveProperty("promotion_code");
-    expect(request).not.toHaveProperty("allow_promotion_codes");
   });
 
   it("derives the Creator API base from EAZO_API_BASE", () => {
@@ -622,7 +636,6 @@ describe("Eazo Payments SDK", () => {
       ],
       currency: "usd",
       appUserId: "app_user_test",
-      allowPromotionCodes: true,
       successUrl: "https://app.example.com/payment/success",
       cancelUrl: "https://app.example.com/payment/cancel",
       idempotencyKey: "cart-once",
@@ -633,7 +646,7 @@ describe("Eazo Payments SDK", () => {
     const body = JSON.parse(String(request?.body));
     assertEazoCheckoutRequestContract(body);
     expect(body.items).toHaveLength(2);
-    expect(body.allow_promotion_codes).toBe(true);
+    expect(body).not.toHaveProperty("auto_apply_claimed_coupon");
     expect(body).not.toHaveProperty("unit_amount");
   });
 
@@ -824,7 +837,7 @@ describe("Eazo Payments SDK", () => {
         { productKey: "notebook", quantity: 2 },
         { productKey: "pen" },
       ],
-      { promotionCode: "SAVE20", redirect },
+      { redirect },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -836,7 +849,6 @@ describe("Eazo Payments SDK", () => {
             { productKey: "notebook", quantity: 2 },
             { productKey: "pen" },
           ],
-          promotionCode: "SAVE20",
         }),
       }),
     );
@@ -1352,7 +1364,7 @@ describe("Eazo Payments SDK", () => {
     expect(body.cancel_url).not.toContain("0.0.0.0");
   });
 
-  it("creates one Next checkout for multiple catalog products and a coupon", async () => {
+  it("creates one Next checkout for multiple catalog products", async () => {
     const products = defineEazoPaymentProducts({
       notebook: {
         key: "notebook",
@@ -1386,7 +1398,6 @@ describe("Eazo Payments SDK", () => {
           { productKey: "notebook", quantity: 2 },
           { productKey: "pen", quantity: 1 },
         ],
-        promotionCode: "SAVE20",
       }),
     }));
 
@@ -1410,7 +1421,7 @@ describe("Eazo Payments SDK", () => {
         quantity: 1,
       },
     ]);
-    expect(body.promotion_code).toBe("SAVE20");
+    expect(body).not.toHaveProperty("auto_apply_claimed_coupon");
     expect(body.success_url).toBe("https://app.example.com/payment/success");
   });
 
@@ -1644,10 +1655,9 @@ describe("Eazo Payments SDK", () => {
     expect(result.files).toContain("src/components/eazo-payments/PaymentUnlockPanel.tsx");
     expect(result.files).toContain("src/app/api/payments/checkout/route.ts");
     expect(result.files).toContain("src/app/api/payments/entitlements/route.ts");
-    expect(result.files).toContain("src/app/api/payments/cancel/route.ts");
-    expect(result.files).toContain("src/app/api/payments/coupons/route.ts");
-    expect(result.files).toContain("src/app/api/payments/coupons/[couponId]/claim/route.ts");
-    expect(result.files).toContain("src/app/api/payments/coupon-wallet/route.ts");
+    expect(result.files).not.toContain("src/app/api/payments/cancel/route.ts");
+    expect(result.files).not.toContain("src/app/api/payments/coupons/route.ts");
+    expect(result.files).not.toContain("src/app/api/payments/coupon-wallet/route.ts");
     const route = fs.readFileSync(
       path.join(cwd, "src/app/api/payments/checkout/route.ts"),
       "utf8",
@@ -1655,12 +1665,6 @@ describe("Eazo Payments SDK", () => {
     expect(route).toContain("@eazo/sdk/payments/next");
     expect(route).not.toContain("/api/open/payments/checkout-sessions");
     expect(route).not.toContain("unit_amount");
-    const couponsRoute = fs.readFileSync(
-      path.join(cwd, "src/app/api/payments/coupons/route.ts"),
-      "utf8",
-    );
-    expect(couponsRoute).toContain("createEazoCouponCreateRoute");
-    expect(couponsRoute).toContain("createEazoCouponListRoute");
     const successPage = fs.readFileSync(
       path.join(cwd, "src/app/payment/success/page.tsx"),
       "utf8",
@@ -1671,6 +1675,7 @@ describe("Eazo Payments SDK", () => {
     );
     expect(successPage).toContain("@eazo/sdk/payments/next/client");
     expect(cancelPage).toContain("@eazo/sdk/payments/next/client");
+    expect(cancelPage).not.toContain("cancelCheckout");
     const panel = fs.readFileSync(
       path.join(cwd, "src/components/eazo-payments/PaymentUnlockPanel.tsx"),
       "utf8",
@@ -1690,6 +1695,36 @@ describe("Eazo Payments SDK", () => {
     expect(contractTest).toContain("below_minimum");
     expect(contractTest).toContain("above_maximum");
     assertNoLegacyPaymentFlowSource(uiTest, "payment-ui-contract.test.tsx");
+  });
+
+  it("scaffolds coupon routes only when explicitly enabled", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eazo-payments-coupons-"));
+    const result = scaffoldPayments({ cwd, withCoupons: true });
+
+    expect(result.withCoupons).toBe(true);
+    expect(result.files).toContain("src/app/api/payments/cancel/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupons/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupons/[couponId]/claim/route.ts");
+    expect(result.files).toContain("src/app/api/payments/coupon-wallet/route.ts");
+    const couponsRoute = fs.readFileSync(
+      path.join(cwd, "src/app/api/payments/coupons/route.ts"),
+      "utf8",
+    );
+    expect(couponsRoute).toContain("createEazoCouponCreateRoute");
+    expect(couponsRoute).toContain("createEazoCouponListRoute");
+    const cancelPage = fs.readFileSync(
+      path.join(cwd, "src/app/payment/cancel/page.tsx"),
+      "utf8",
+    );
+    expect(cancelPage).toContain("cancelCheckout");
+  });
+
+  it("rejects coupons for the subscription recipe", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eazo-payments-subscription-coupons-"));
+
+    expect(() =>
+      scaffoldPayments({ cwd, recipe: "monthly-subscription", withCoupons: true }),
+    ).toThrow("Coupons are supported only by the one-time-unlock recipe");
   });
 
   it("rejects SDK versions below the Payment SDK minimum", () => {

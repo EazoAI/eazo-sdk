@@ -159,16 +159,18 @@ export type EazoPaymentCancelPageProps = {
   homeHref?: string;
   homeLabel?: React.ReactNode;
   className?: string;
+  cancelCheckout?: boolean;
 };
 
 export function EazoPaymentCancelPage({
   homeHref = "/",
   homeLabel = "Return home",
   className,
+  cancelCheckout = false,
 }: EazoPaymentCancelPageProps) {
   React.useEffect(() => {
     const paymentId = readEazoPaymentIdFromUrl() || readRememberedEazoPaymentId();
-    if (!paymentId) {
+    if (!paymentId || !cancelCheckout) {
       clearRememberedEazoPaymentId();
       return;
     }
@@ -186,7 +188,7 @@ export function EazoPaymentCancelPage({
         clearRememberedEazoPaymentId();
       }
     })();
-  }, []);
+  }, [cancelCheckout]);
 
   return (
     <PaymentStateShell

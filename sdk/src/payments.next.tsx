@@ -128,14 +128,6 @@ function firstBodyString(body: JsonBody, names: readonly string[]) {
   return null;
 }
 
-function firstBodyBoolean(body: JsonBody, names: readonly string[]) {
-  for (const name of names) {
-    const value = body[name];
-    if (typeof value === "boolean") return value;
-  }
-  return false;
-}
-
 function readCartItems(body: JsonBody) {
   if (!Array.isArray(body.items)) return [];
   return body.items.map((value) => {
@@ -194,14 +186,6 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
             { status: 400 },
           );
         }
-        const promotionCode = firstBodyString(
-          bodyRecord,
-          ["promotionCode", "promotion_code"],
-        );
-        const allowPromotionCodes = firstBodyBoolean(
-          bodyRecord,
-          ["allowPromotionCodes", "allow_promotion_codes"],
-        );
         const autoApplyClaimedCoupon = (
           typeof bodyRecord.autoApplyClaimedCoupon === "boolean"
             ? bodyRecord.autoApplyClaimedCoupon
@@ -209,12 +193,6 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
               ? bodyRecord.auto_apply_claimed_coupon
               : undefined
         );
-        if (promotionCode && allowPromotionCodes) {
-          return jsonResponse(
-            { error: "promotionCode and allowPromotionCodes are mutually exclusive" },
-            { status: 400 },
-          );
-        }
         const checkout = await createEazoCartCheckoutSession({
           items: resolvedProducts.map((product, index) => ({
             productKey: product.key,
@@ -227,8 +205,6 @@ export function createEazoCheckoutRoute(options: EazoCheckoutRouteOptions) {
           appUserId: authResult.user.id,
           successUrl: `${origin}/payment/success`,
           cancelUrl: `${origin}/payment/cancel`,
-          ...(promotionCode ? { promotionCode } : {}),
-          ...(allowPromotionCodes ? { allowPromotionCodes: true } : {}),
           ...(autoApplyClaimedCoupon === undefined ? {} : { autoApplyClaimedCoupon }),
           metadata: { mode: "one_time" },
         });

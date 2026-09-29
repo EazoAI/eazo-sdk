@@ -427,8 +427,6 @@ export type CreateEazoCartCheckoutInput = {
   successUrl: string;
   cancelUrl: string;
   appUserId?: string;
-  promotionCode?: string;
-  allowPromotionCodes?: boolean;
   autoApplyClaimedCoupon?: boolean;
   metadata?: EazoPaymentMetadata;
   idempotencyKey?: string;
@@ -466,8 +464,6 @@ export type EazoCartCheckoutSessionRequest = {
   success_url: string;
   cancel_url: string;
   items: EazoCheckoutSessionLineItemRequest[];
-  promotion_code?: string;
-  allow_promotion_codes?: boolean;
   auto_apply_claimed_coupon?: boolean;
   metadata: EazoPaymentMetadata;
   idempotency_key: string;
@@ -533,10 +529,9 @@ export type EazoPaymentStatus = {
   coupon?: {
     id?: string | null;
     claim_id?: string | null;
-    source?: "claimed" | "promotion_code";
+    source?: "claimed";
     code?: string | null;
     name?: string | null;
-    stripe_promotion_code_id?: string | null;
     amount_discount: number;
     status: "pending" | "redeemed" | "released" | "not_applied";
   } | null;
@@ -926,17 +921,12 @@ export async function startEazoCheckout(
 export async function startEazoCartCheckout(
   items: EazoCartSelectionItem[],
   options: {
-    promotionCode?: string;
-    allowPromotionCodes?: boolean;
     autoApplyClaimedCoupon?: boolean;
     redirect?: EazoCheckoutRedirect;
   } = {},
 ) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("Cart must contain at least one product");
-  }
-  if (options.promotionCode && options.allowPromotionCodes) {
-    throw new Error("promotionCode and allowPromotionCodes are mutually exclusive");
   }
   await auth.login();
   const sessionHeader = await auth.getSessionHeader();
@@ -948,8 +938,6 @@ export async function startEazoCartCheckout(
     },
     body: JSON.stringify({
       items,
-      ...(options.promotionCode ? { promotionCode: options.promotionCode } : {}),
-      ...(options.allowPromotionCodes ? { allowPromotionCodes: true } : {}),
       ...(options.autoApplyClaimedCoupon === undefined
         ? {}
         : { autoApplyClaimedCoupon: options.autoApplyClaimedCoupon }),

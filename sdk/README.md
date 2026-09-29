@@ -212,11 +212,6 @@ src/components/eazo-payments/PaymentUnlockPanel.tsx
 src/app/api/payments/checkout/route.ts
 src/app/api/payments/status/route.ts
 src/app/api/payments/entitlements/route.ts
-src/app/api/payments/cancel/route.ts
-src/app/api/payments/coupons/route.ts
-src/app/api/payments/coupons/[couponId]/claim/route.ts
-src/app/api/payments/coupons/[couponId]/deactivate/route.ts
-src/app/api/payments/coupon-wallet/route.ts
 src/app/payment/success/page.tsx
 src/app/payment/cancel/page.tsx
 src/lib/eazo-payments/payment-contract.test.ts
@@ -256,8 +251,8 @@ export const POST = createEazoCheckoutRoute({ getProduct: getPaymentProduct });
 ```
 
 The same route handles a unified one-time cart checkout. All items are resolved
-from the server-side catalog, so browser code sends only stable product keys,
-quantities, and an optional customer-facing Promotion Code:
+from the server-side catalog, so browser code sends only stable product keys and
+quantities:
 
 ```ts
 import { startEazoCartCheckout } from "@eazo/sdk/payments";
@@ -272,16 +267,16 @@ await startEazoCartCheckout(
 
 Cart products must be one-time products in one currency. The platform creates
 one Stripe Checkout Session and one payment record, then activates each item’s
-entitlement after the unified payment succeeds. By default, Eazo selects the
+entitlement after the unified payment succeeds.
+
+Coupon support is opt-in. Apps whose creator requests merchant coupons should
+scaffold with `--recipe one-time-unlock --with-coupons` and start coupon-enabled
+cart checkout with `{ autoApplyClaimedCoupon: true }`. Eazo then selects the
 claimed coupon that saves this customer the most money, reserves it for the
 Checkout, and redeems it only after payment succeeds. App owners create coupons
 with `createEazoCoupon(...)`; customers discover and claim them with
 `listEazoCoupons()` and `claimEazoCoupon(...)`, then inspect their wallet with
 `listEazoCouponWallet()`.
-
-Platform campaigns can still use `promotionCode` or
-`allowPromotionCodes: true`; those explicit Stripe modes disable claimed-coupon
-auto-application for that Checkout.
 
 For a full copyable Next.js example, see:
 

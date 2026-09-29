@@ -6,6 +6,7 @@ import * as path from "path";
 type ScaffoldOptions = {
   cwd?: string;
   recipe?: string;
+  withCoupons?: boolean;
   force?: boolean;
   dryRun?: boolean;
 };
@@ -332,14 +333,14 @@ export default function PaymentSuccessPage() {
 `);
 }
 
-function cancelPageTemplate() {
+function cancelPageTemplate(withCoupons: boolean) {
   return normalizeNewline(`
 "use client";
 
 import { EazoPaymentCancelPage } from "@eazo/sdk/payments/next/client";
 
 export default function PaymentCancelPage() {
-  return <EazoPaymentCancelPage />;
+  return <EazoPaymentCancelPage${withCoupons ? " cancelCheckout" : ""} />;
 }
 `);
 }
@@ -1024,7 +1025,7 @@ describe("Eazo payment UI contract", () => {
 `);
 }
 
-function templateFiles(recipe: string): TemplateFile[] {
+function templateFiles(recipe: string, withCoupons: boolean): TemplateFile[] {
   const files: TemplateFile[] = [
     {
       filePath: "src/lib/eazo-payments/catalog.ts",
@@ -1055,21 +1056,21 @@ function templateFiles(recipe: string): TemplateFile[] {
       content: entitlementRouteTemplate(),
     },
     {
-      filePath: "src/app/api/payments/cancel/route.ts",
-      content: paymentCancelRouteTemplate(),
-    },
-    {
       filePath: "src/app/payment/success/page.tsx",
       content: successPageTemplate(),
     },
     {
       filePath: "src/app/payment/cancel/page.tsx",
-      content: cancelPageTemplate(),
+      content: cancelPageTemplate(withCoupons),
     },
   ];
 
-  if (recipe === "one-time-unlock") {
+  if (withCoupons) {
     files.push(
+      {
+        filePath: "src/app/api/payments/cancel/route.ts",
+        content: paymentCancelRouteTemplate(),
+      },
       {
         filePath: "src/app/api/payments/coupons/route.ts",
         content: couponsRouteTemplate(),
@@ -1116,12 +1117,16 @@ function templateFiles(recipe: string): TemplateFile[] {
 export function scaffoldPayments(options: ScaffoldOptions = {}) {
   const cwd = path.resolve(options.cwd || process.cwd());
   const recipe = options.recipe || DEFAULT_RECIPE;
+  const withCoupons = options.withCoupons === true;
 
   if (!SUPPORTED_RECIPES.has(recipe)) {
     throw new Error(`Unsupported payments recipe: ${recipe}`);
   }
+  if (withCoupons && recipe !== "one-time-unlock") {
+    throw new Error("Coupons are supported only by the one-time-unlock recipe");
+  }
 
-  const files = templateFiles(recipe);
+  const files = templateFiles(recipe, withCoupons);
   const existing = files
     .map((file) => path.join(cwd, file.filePath))
     .filter((filePath) => fs.existsSync(filePath));
@@ -1142,6 +1147,7 @@ export function scaffoldPayments(options: ScaffoldOptions = {}) {
 
   return {
     recipe,
+    withCoupons,
     cwd,
     files: files.map((file) => file.filePath),
   };
@@ -1150,7 +1156,7 @@ export function scaffoldPayments(options: ScaffoldOptions = {}) {
 function printUsage() {
   console.log(`Usage:
   eazo-sdk payments doctor [--minimum-version <version>] [--cwd <path>]
-  eazo-sdk payments init --recipe one-time-unlock [--minimum-version <version>] [--force] [--cwd <path>]
+  eazo-sdk payments init --recipe one-time-unlock [--with-coupons] [--minimum-version <version>] [--force] [--cwd <path>]
   eazo-sdk payments init --recipe monthly-subscription [--minimum-version <version>] [--force] [--cwd <path>]
 
 Commands:
@@ -1184,6 +1190,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const result = scaffoldPayments({
     recipe: readOption(argv, "--recipe") || DEFAULT_RECIPE,
+    withCoupons: argv.includes("--with-coupons"),
     cwd,
     force: argv.includes("--force"),
     dryRun: argv.includes("--dry-run"),

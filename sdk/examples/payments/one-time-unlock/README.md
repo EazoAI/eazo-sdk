@@ -2,9 +2,8 @@
 
 Complete Next.js App Router example for Eazo marketplace payments.
 
-Use this example as the reference implementation for generated apps. The CLI
-scaffold creates the same integration shape; this directory explains what each
-piece does and why the generated app should avoid custom payment code.
+Use this example as the reference implementation for coupon-enabled generated
+apps. The CLI creates this integration shape only with `--with-coupons`.
 
 ## What This Example Implements
 

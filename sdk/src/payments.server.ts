@@ -154,15 +154,7 @@ export function buildEazoCartCheckoutRequest(
   if (input.items.length > 100) {
     throw new Error("items must contain at most 100 products");
   }
-  const autoApplyClaimedCoupon = input.autoApplyClaimedCoupon ?? (
-    !input.promotionCode && !input.allowPromotionCodes
-  );
-  if (
-    (input.promotionCode && input.allowPromotionCodes) ||
-    (autoApplyClaimedCoupon && (input.promotionCode || input.allowPromotionCodes))
-  ) {
-    throw new Error("choose one coupon application mode");
-  }
+  const autoApplyClaimedCoupon = input.autoApplyClaimedCoupon ?? false;
 
   const seenProductKeys = new Set<string>();
   const items = input.items.map((item) => {
@@ -211,8 +203,6 @@ export function buildEazoCartCheckoutRequest(
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     items,
-    ...(input.promotionCode ? { promotion_code: input.promotionCode } : {}),
-    ...(input.allowPromotionCodes ? { allow_promotion_codes: true } : {}),
     ...(autoApplyClaimedCoupon ? { auto_apply_claimed_coupon: true } : {}),
     metadata: {
       mode: EAZO_PAYMENT_MODE.ONE_TIME,
