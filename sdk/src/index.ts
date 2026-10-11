@@ -34,5 +34,5 @@ export type {
   PublicAppData,
   PublicAppInfo,
   PublicAppViewer,
-} from "./internal/banner-ui/app-info";
+} from "./internal/app-info";
 export type { User, DeviceContext, AuthState, EazoState } from "./types";

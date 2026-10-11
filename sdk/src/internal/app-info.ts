@@ -1,4 +1,4 @@
-import { getPlatformApiBase } from "../config";
+import { getPlatformApiBase } from "./config";
 
 /**
  * Per-caller flags returned alongside `PublicAppInfo`. Always present
@@ -63,18 +63,15 @@ export interface PublicAppInfo {
 
 /**
  * Maximum time to wait on the platform before treating the fetch as
- * "no data" and returning null. Bounds the worst-case impact on
- * SSR TTFB when portal-agent-server is slow/unreachable — without this,
- * the server `EazoProvider` would block the response indefinitely.
+ * "no data" and returning null. Bounds the wait for explicit server/SSR
+ * callers when portal-agent-server is slow or unreachable.
  */
 const DEFAULT_TIMEOUT_MS = 2000;
 
 /**
  * Fetches the public profile for the configured app. Returns `null` on
  * any error (network, 404, timeout, malformed response, missing appId)
- * so the caller can render a fallback rather than blowing up — the
- * handoff overlay is a promo surface and should degrade gracefully when
- * the platform is unreachable.
+ * so callers can degrade gracefully when the platform is unreachable.
  *
  * Hits `GET <apiBase>/api/apps-open/:appId`. `apiBase` resolves from the
  * caller-supplied `options.apiBase` first (useful when the host already

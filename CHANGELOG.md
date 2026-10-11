@@ -14,13 +14,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mobile host. The public types and v1 bridge protocol include stable schedule
   IDs, ISO weekdays, local active windows, and explicit clear-all semantics.
 
+## [0.22.10] - 2026-09-08
+
+### Documentation
+
+- Clarify that hosted apps and templates own safe-area placement; the SDK
+  keeps application content layout-neutral.
+
+### Fixed
+
+- **Prevented app content from collapsing inside Eazo Mobile WebView and iframe
+  hosts.** `<EazoProvider>` now renders app children directly, without the
+  `.eazo-app-area` / `.eazo-app-area-scroller` DOM wrappers or their layout CSS.
+  This restores the app's original height, flex, fixed-position, and scrolling
+  behavior while keeping the SDK's login/share UI as non-layout siblings.
+
 ### Changed
 
-- **Restored the top web handoff banner.** `<EazoProvider>` mounts
-  `<EazoBrandBanner />` again on plain-web hosts. The center handoff modal
-  remains disabled (`MODAL_ENABLED=false`); only the single top strip renders.
-  SSR prefetch of `PublicAppInfo` is restored so the banner can paint real app
-  identity on first frame. Mobile WebView and iframe behaviour is unchanged.
+- **The SDK no longer renders its own web→app handoff banner.**
+  `<EazoProvider>` stopped mounting `<EazoBrandBanner />`; branding is now
+  delivered by the hosted, framework-agnostic `eazo-brand-banner.js` drop-in
+  script that the app loads itself (e.g. via `next/script`). Because the SDK
+  banner was the only code that added the `eazo-host-web` class and the
+  `<html>` handoff padding / CSS vars, the SDK now leaves `<html>` untouched
+  and no longer wraps app content in banner layout containers — the drop-in
+  script owns all banner spacing. `LoginUI`,
+  `ShareDownloadModal`, auth/device bootstrap, and mobile WebView / iframe
+  behaviour are unchanged. The retired `banner-ui` implementation and its QR
+  dependency have been removed; `eazo-brand-banner` is now the sole banner UI
+  implementation. The server Provider also no longer prefetches public app
+  data that only the retired banner consumed. Public app-info types, the
+  server-side `fetchPublicAppInfo` helper, and memory consent checks remain.
 
 ## [0.21.0] - 2026-06-11
 
