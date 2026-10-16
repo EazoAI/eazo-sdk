@@ -1,21 +1,27 @@
 import {
+  assertEazoCheckoutItems,
   assertEazoPaymentCurrency,
   assertEazoPaymentMode,
   assertEazoPaymentProductKey,
   assertEazoPaymentUnitAmount,
+  EAZO_DISCOUNT_LABEL_MAX_LENGTH,
   EAZO_PAYMENT_MODE,
   EazoPaymentApiError,
   getEazoPaymentPriceLimits,
   normalizeEazoCheckoutResult,
   type EazoAppSubscription,
   type EazoAppSubscriptionsResponse,
+  type CreateEazoItemsCheckoutInput,
   type CreateEazoCheckoutInput,
   type CreateEazoCheckoutResult,
+  type EazoItemsCheckoutSessionRequest,
+  type EazoItemsPaymentsResponse,
   type EazoCheckoutSessionRequest,
   type EazoCheckoutSessionResponse,
   type EazoEntitlement,
   type EazoPaymentApiErrorBody,
   type EazoPaymentStatus,
+  type EazoPaymentStatusValue,
 } from "./payments";
 
 export type EazoPaymentEnv = {
@@ -142,9 +148,51 @@ export function buildEazoCheckoutRequest(
 export async function createEazoCheckoutSession(
   input: CreateEazoCheckoutInput,
 ): Promise<CreateEazoCheckoutResult> {
-  const { apiBase, privateKey } = requireEazoPaymentEnv();
-  const requestBody = buildEazoCheckoutRequest(input);
+  return postCheckoutSession(buildEazoCheckoutRequest(input));
+}
 
+export function buildEazoItemsCheckoutRequest(
+  input: CreateEazoItemsCheckoutInput,
+): EazoItemsCheckoutSessionRequest {
+  const { appId } = requireEazoPaymentEnv();
+  if (!input.appUserId || typeof input.appUserId !== "string") {
+    throw new Error("appUserId is required for checkout with items");
+  }
+  const totals = assertEazoCheckoutItems(input.items, input.currency, { discountAmount: input.discountAmount });
+  // A label without an amount (e.g. a coupon that did not apply) is ignored.
+  const discountLabel = input.discountLabel?.trim();
+
+  return {
+    app_id: appId,
+    app_user_id: input.appUserId,
+    mode: EAZO_PAYMENT_MODE.ONE_TIME,
+    currency: input.currency,
+    items: input.items.map((item) => ({
+      name: item.name.trim(),
+      unit_amount: item.unitAmount,
+      quantity: item.quantity ?? 1,
+      metadata: item.metadata || {},
+      ...(item.entitlementKey ? { entitlement_key: item.entitlementKey } : {}),
+    })),
+    ...(totals.discountAmount > 0
+      ? {
+        discount_amount: totals.discountAmount,
+        ...(discountLabel ? { discount_label: discountLabel.slice(0, EAZO_DISCOUNT_LABEL_MAX_LENGTH) } : {}),
+      }
+      : {}),
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    metadata: input.metadata || {},
+    idempotency_key:
+      input.idempotencyKey ||
+      createStableCheckoutIdempotencyKey(appId, "items", input.appUserId),
+  };
+}
+
+async function postCheckoutSession(
+  requestBody: EazoCheckoutSessionRequest | EazoItemsCheckoutSessionRequest,
+): Promise<CreateEazoCheckoutResult> {
+  const { apiBase, privateKey } = requireEazoPaymentEnv();
   const response = await fetch(`${apiBase}/api/open/payments/checkout-sessions`, {
     method: "POST",
     headers: {
@@ -165,6 +213,48 @@ export async function createEazoCheckoutSession(
   }
 
   return checkout;
+}
+
+export async function createEazoItemsCheckoutSession(
+  input: CreateEazoItemsCheckoutInput,
+): Promise<CreateEazoCheckoutResult> {
+  return postCheckoutSession(buildEazoItemsCheckoutRequest(input));
+}
+
+export async function listEazoItemsPayments(options: {
+  appUserId?: string;
+  status?: EazoPaymentStatusValue;
+  updatedAfter?: Date | string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<EazoItemsPaymentsResponse> {
+  const { apiBase, appId, privateKey } = requireEazoPaymentEnv();
+  const query = new URLSearchParams({
+    app_id: appId,
+    mode: EAZO_PAYMENT_MODE.ONE_TIME,
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
+  if (options.appUserId) query.set("app_user_id", options.appUserId);
+  if (options.status) query.set("status", options.status);
+  if (options.updatedAfter) {
+    const updatedAfter = options.updatedAfter instanceof Date
+      ? options.updatedAfter.toISOString()
+      : options.updatedAfter;
+    query.set("updated_after", updatedAfter);
+  }
+
+  const response = await fetch(`${apiBase}/api/open/payments?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${privateKey}` },
+    cache: "no-store",
+  });
+
+  const data = (await readJson(response)) as EazoItemsPaymentsResponse & EazoPaymentApiErrorBody;
+  if (!response.ok) {
+    throw new EazoPaymentApiError(response.status, data, "Payment list failed");
+  }
+  // Single-product one-time payments share the mode; keep those with line items.
+  return { ...data, items: data.items.filter((payment) => Array.isArray(payment.line_items)) };
 }
 
 export async function getEazoPaymentStatus(
@@ -282,7 +372,14 @@ export function resumeEazoSubscription(
 }
 
 export type {
+  CreateEazoItemsCheckoutInput,
   CreateEazoCheckoutInput,
+  EazoItemsCheckoutSessionRequest,
+  EazoCheckoutItem,
+  EazoPaymentLineItem,
+  EazoItemsPayment,
+  EazoItemsPaymentsResponse,
+  EazoItemsTotals,
   CreateEazoCheckoutResult,
   EazoCheckoutSessionRequest,
   EazoCheckoutSessionResponse,

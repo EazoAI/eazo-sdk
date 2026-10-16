@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One-time payments with several items.** A one-time checkout can cover
+  several line items, each in any quantity. `createEazoCheckoutRoute` accepts
+  `resolveItems` (body `{ lines, data }`) alongside `getProduct`;
+  `createEazoPaymentStatusRoute` accepts `fulfill` for paid payments with line
+  items; `EazoPaymentSuccessPage` handles them. New: `createEazoPaymentSyncRoute`
+  and `EazoPaymentSync` (`/api/payments/sync`), `createEazoItemsCheckoutSession`,
+  `buildEazoItemsCheckoutRequest`, `listEazoItemsPayments`,
+  `startEazoItemsCheckout`, `assertEazoCheckoutItems`,
+  `getEazoItemsMaximumAmount`, `EAZO_ITEMS_*` constants, and testing helpers.
+  Lines with `entitlementKey` (quantity 1) become entitlements;
+  `discountAmount` / `discountLabel` carry an app-computed discount. Item
+  subtotals are capped at USD 5,000 (per-currency equivalents); single-product
+  and subscription prices keep the USD 700 cap. Requires the Creator one-time
+  `items` checkout API.
+- `eazo-sdk payments init --recipe one-time-items` scaffold (keeps existing
+  shared routes and prints the option to add) and the
+  `examples/payments/one-time-items` reference app.
+- `eazo-sdk payments init` scaffolds into a root `app/` directory (and
+  `lib/`, `components/`) when the project has no `src/app`, for every recipe.
+
+### Changed
+
+- `EazoPaymentStatus` gains optional `mode`, `app_user_id` and `line_items`.
+
 ## [0.22.10] - 2026-09-08
 
 ### Documentation

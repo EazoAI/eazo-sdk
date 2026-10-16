@@ -1,5 +1,8 @@
 import type {
   CreateEazoCheckoutResult,
+  EazoItemsCheckoutSessionRequest,
+  EazoCheckoutItem,
+  EazoItemsPayment,
   EazoAppSubscription,
   EazoAppSubscriptionsResponse,
   EazoCheckoutSessionRequest,
@@ -11,8 +14,10 @@ import type {
   EazoPaymentStatusValue,
 } from "./payments";
 import {
+  assertEazoCheckoutItems,
   assertEazoPaymentUnitAmount,
   EAZO_PAYMENT_CURRENCY,
+  EAZO_PAYMENT_MODE,
   getEazoPaymentPriceLimits,
 } from "./payments";
 
@@ -41,6 +46,66 @@ export function mockEazoPaymentStatus(
     product_name: "Premium unlock",
     metadata: { product_key: "premium" },
   };
+}
+
+export function mockEazoItemsPayment(
+  status: EazoPaymentStatusValue,
+  overrides: Partial<EazoItemsPayment> = {},
+): EazoItemsPayment {
+  return {
+    payment_id: "cap_test_items",
+    app_id: "app_test",
+    app_user_id: "app_user_test",
+    mode: EAZO_PAYMENT_MODE.ONE_TIME,
+    status,
+    paid: status === "succeeded",
+    amount_total: 897,
+    currency: "usd",
+    product_name: "Item B ×2 + 1 more",
+    metadata: {},
+    line_items: [
+      { name: "Item B", unit_amount: 199, quantity: 2, amount_subtotal: 398, metadata: { item_id: "item_b" }, entitlement_key: null },
+      { name: "Item A", unit_amount: 499, quantity: 1, amount_subtotal: 499, metadata: { item_id: "item_a" }, entitlement_key: "item_a" },
+    ],
+    amount_subtotal: 897,
+    discount_amount: null,
+    discount_label: null,
+    entitlement: null,
+    ...overrides,
+  };
+}
+
+/** A paid (by default) payment with line items, built from what the app's resolveItems returned. */
+export function mockEazoItemsPaymentFromResolution(
+  resolution: {
+    currency: EazoPaymentCurrency;
+    items: EazoCheckoutItem[];
+    discountAmount?: number;
+    discountLabel?: string;
+    metadata?: Record<string, string>;
+  },
+  overrides: Partial<EazoItemsPayment> = {},
+): EazoItemsPayment {
+  const lineItems = resolution.items.map((item) => ({
+    name: item.name,
+    unit_amount: item.unitAmount,
+    quantity: item.quantity ?? 1,
+    amount_subtotal: item.unitAmount * (item.quantity ?? 1),
+    metadata: item.metadata || {},
+    entitlement_key: item.entitlementKey ?? null,
+  }));
+  const subtotal = lineItems.reduce((sum, line) => sum + line.amount_subtotal, 0);
+  const discount = resolution.discountAmount ?? 0;
+  return mockEazoItemsPayment("succeeded", {
+    currency: resolution.currency,
+    line_items: lineItems,
+    amount_subtotal: subtotal,
+    amount_total: subtotal - discount,
+    discount_amount: discount || null,
+    discount_label: resolution.discountLabel ?? null,
+    metadata: resolution.metadata || {},
+    ...overrides,
+  });
 }
 
 export function mockEazoEntitlement(
@@ -226,6 +291,69 @@ export function assertEazoCheckoutRequestContract(request: EazoCheckoutSessionRe
   if (serialized.includes("STRIPE_SECRET_KEY")) {
     throw new Error("Generated apps must not include Stripe secrets");
   }
+}
+
+export function assertEazoItemsCheckoutRequestContract(request: EazoItemsCheckoutSessionRequest) {
+  const body = request as unknown as Record<string, unknown>;
+  assertExactKeys(
+    body,
+    [
+      "app_id",
+      "app_user_id",
+      "mode",
+      "currency",
+      "items",
+      ...(body.discount_amount === undefined ? [] : ["discount_amount"]),
+      ...(body.discount_label === undefined ? [] : ["discount_label"]),
+      "success_url",
+      "cancel_url",
+      "metadata",
+      "idempotency_key",
+    ],
+    "Eazo items checkout request",
+  );
+  if (body.mode !== EAZO_PAYMENT_MODE.ONE_TIME) {
+    throw new Error(`Eazo items checkout request mode must be ${EAZO_PAYMENT_MODE.ONE_TIME}`);
+  }
+  assertString(body.app_id, "app_id");
+  assertString(body.app_user_id, "app_user_id");
+  assertCurrency(body.currency, "currency");
+  if (!Array.isArray(body.items)) throw new Error("items must be an array");
+  body.items.forEach((item, index) => {
+    assertRecord(item, `items[${index}]`);
+    assertExactKeys(
+      item,
+      ["name", "unit_amount", "quantity", "metadata", ...(item.entitlement_key === undefined ? [] : ["entitlement_key"])],
+      `items[${index}]`,
+    );
+    assertMetadata(item.metadata, `items[${index}].metadata`);
+  });
+  assertEazoCheckoutItems(
+    (body.items as Array<Record<string, unknown>>).map((item) => ({
+      name: item.name as string,
+      unitAmount: item.unit_amount as number,
+      quantity: item.quantity as number,
+      ...(item.entitlement_key === undefined ? {} : { entitlementKey: item.entitlement_key as string }),
+    })),
+    body.currency,
+    { discountAmount: body.discount_amount as number | undefined },
+  );
+  assertString(body.success_url, "success_url");
+  assertString(body.cancel_url, "cancel_url");
+  assertMetadata(body.metadata, "metadata");
+  assertString(body.idempotency_key, "idempotency_key");
+}
+
+export function assertLocalItemsCheckoutBodyContract(body: unknown) {
+  assertRecord(body, "local items checkout body");
+  assertExactKeys(body, ["lines", ...(body.data === undefined ? [] : ["data"])], "local items checkout body");
+  if (!Array.isArray(body.lines)) throw new Error("lines must be an array");
+  body.lines.forEach((line, index) => {
+    assertRecord(line, `lines[${index}]`);
+    assertExactKeys(line, ["id", "quantity"], `lines[${index}]`);
+    assertString(line.id, `lines[${index}].id`);
+    assertNumber(line.quantity, `lines[${index}].quantity`);
+  });
 }
 
 export function assertEazoCheckoutResponseContract(response: EazoCheckoutSessionResponse) {

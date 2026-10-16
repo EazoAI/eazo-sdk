@@ -14,6 +14,8 @@ import { getEazoPaymentSessionHeaders, refreshEazoEntitlement } from "./payments
 
 const POLLABLE_STATUSES = new Set(["pending", "processing"]);
 
+type StatusResponse = EazoPaymentStatus & { fulfilled?: boolean };
+
 export type EazoPaymentSuccessPageProps = {
   homeHref?: string;
   continueLabel?: React.ReactNode;
@@ -31,7 +33,7 @@ export function EazoPaymentSuccessPage({
   pollIntervalMs = 1500,
   className,
 }: EazoPaymentSuccessPageProps) {
-  const [status, setStatus] = React.useState<EazoPaymentStatus | null>(null);
+  const [status, setStatus] = React.useState<StatusResponse | null>(null);
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
@@ -55,13 +57,28 @@ export function EazoPaymentSuccessPage({
       const data = await response.json().catch(() => ({}));
       if (cancelled) return;
 
+      const nextStatus = data as StatusResponse;
+      if (nextStatus.paid && nextStatus.fulfilled === false) {
+        // Paid but the app could not grant every line yet; EazoPaymentSync retries later.
+        setStatus(nextStatus);
+        clearRememberedEazoPaymentId();
+        return;
+      }
       if (!response.ok) {
         setError(getEazoPaymentErrorMessage(data as EazoPaymentApiErrorBody, "Payment status failed"));
         return;
       }
 
-      const nextStatus = data as EazoPaymentStatus;
       setStatus(nextStatus);
+      if (nextStatus.paid && Array.isArray(nextStatus.line_items)) {
+        // Eazo grants entitlement lines; refresh them so entitlement gates update.
+        const unlockKeys = (nextStatus.line_items || [])
+          .map((line) => line.entitlement_key)
+          .filter((key): key is string => Boolean(key));
+        await Promise.all(unlockKeys.map((key) => refreshEazoEntitlement(key).catch(() => null)));
+        clearRememberedEazoPaymentId();
+        return;
+      }
       if (nextStatus.paid) {
         const productKey =
           nextStatus.entitlement?.product_key ||
@@ -100,6 +117,26 @@ export function EazoPaymentSuccessPage({
         description={error}
         actionHref={homeHref}
         actionLabel={homeLabel}
+      />
+    );
+  }
+
+  if (status?.paid && (Array.isArray(status.line_items) || status.fulfilled !== undefined)) {
+    const delivered = status.fulfilled !== false;
+    return (
+      <PaymentStateShell
+        className={className}
+        tone={delivered ? "success" : "attention"}
+        eyebrow="Payment"
+        title={delivered ? "Purchase complete" : "Payment received"}
+        description={
+          delivered
+            ? "Your items have been added."
+            : "Your items are on the way and will appear the next time you open the app."
+        }
+        actionHref={homeHref}
+        actionLabel={continueLabel}
+        detail={status.product_name}
       />
     );
   }
@@ -171,6 +208,28 @@ export function EazoPaymentCancelPage({
       actionLabel={homeLabel}
     />
   );
+}
+
+/**
+ * Asks the app's sync route to grant any paid payment that was not granted
+ * yet, e.g. when the buyer closed the page before returning from checkout.
+ * Mount once in the app layout; it does nothing for signed-out users.
+ */
+export function EazoPaymentSync({ endpoint = "/api/payments/sync" }: { endpoint?: string }) {
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const headers = await getEazoPaymentSessionHeaders();
+      if (cancelled || !headers["x-eazo-session"]) return;
+      await fetch(endpoint, { method: "POST", headers, cache: "no-store" });
+    })().catch(() => {
+      // Best effort: the next app open retries.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint]);
+  return null;
 }
 
 type PaymentStateTone = "processing" | "success" | "attention" | "failed" | "neutral";
