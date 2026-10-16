@@ -88,6 +88,22 @@ The app checks this list before sending a request; unsupported methods fail imme
 
 ## First-version method and event catalog
 
+### Notification authorization
+
+Notification RPCs run only in a trusted App context. The Host derives the
+current app and signed-in user from the WebView or embed session; request
+payloads do not re-assert either identity.
+
+`notifications.requestSubscription` MUST originate from a direct user action.
+The Host owns any confirmation UI and system notification permission prompt,
+and returns the resulting app subscription and system-permission state.
+`notifications.isSubscribed` is read-only. `notifications.syncSchedules` MUST
+NOT request subscription, show authorization UI, or infer authorization from a
+schedule sync.
+
+When there is no Host, or the Host does not support a subscription-state RPC,
+the SDK resolves `{ subscribed: false, systemPermission: "unavailable" }`.
+
 ### Methods
 
 | `fn` | `args` | `data` | Notes |
@@ -99,9 +115,10 @@ The app checks this list before sending a request; unsupported methods fail imme
 | `device.getContext` | — | `DeviceContext` | Usually unused — hello already contains this |
 | `share.compose` | `{ text?: string; attachments?: Array<{ type: "image"; url: string; caption?: string }>; images?: string[]; sourceAppId?: string; targetPath?: string }` | `{ accepted: boolean }` | App hands raw share materials (text + up to 4 total image materials, each `https://...` or `data:image/...;base64,...`) to the host. `attachments` is the preferred shape because images can include a short caption/meaning; `images` remains legacy-compatible. `targetPath` is an optional app-relative destination such as `/profile/u_123` that the host may open when someone taps the published share widget; absolute URLs are invalid. Host opens its compose surface, AI-drafts a post from the inputs, and lets the user edit and publish. Respond promptly after navigation begins — the SDK times out at 10 s. If the host can't accept the share, respond `NOT_SUPPORTED`; the SDK falls back to a "Continue in the Eazo app" download CTA in the web. Reject with `DENIED` when the host requires a logged-in user and none is signed in. |
 | `memory.reportAction` | `MemoryActionParams` (see `memory.ts`) — same payload posted to `/api/open/gum/action` | — (any data is ignored) | Fire-and-forget side-channel: when the SDK reports a user action, it forwards the same payload to the mobile host so the host can react locally (analytics, on-device memory, UI hints). The HTTP POST to Gum still happens in parallel and is the source of truth. Hosts that don't care about side-channel actions should respond `NOT_SUPPORTED` — the SDK swallows it silently and the HTTP path is unaffected. Hosts MUST NOT block on this request; respond promptly. Sent only when `getHost() === "eazoMobile"`. Both this side-channel and the HTTP POST are gated by the app author's `sendAnonymousData` consent flag (read from `GET /api/apps-open/:appId`); when consent is off, `reportAction` no-ops entirely and this message is never sent. |
-| `notifications.subscribe` | — | `{ subscribed: boolean }` | Opt the current user into push notifications from the embedded app. Host flips the per-(user, app) subscription bit and echoes the resulting state. Idempotent — re-subscribing returns `{ subscribed: true }`. The host is responsible for whether the user has granted system-level push permission (the SDK does not prompt). Respond `NOT_SUPPORTED` when the host cannot maintain per-app subscriptions; the SDK then resolves `{ subscribed: false }` without throwing. |
-| `notifications.unsubscribe` | — | `{ subscribed: boolean }` | Opt the current user out. Idempotent. Same fall-back semantics as `subscribe`. |
-| `notifications.isSubscribed` | — | `{ subscribed: boolean }` | Read the current subscription state without side effects. Same fall-back semantics — `NOT_SUPPORTED` resolves `{ subscribed: false }`. |
+| `notifications.requestSubscription` | — | `{ subscribed: boolean; systemPermission: "granted" \| "denied" \| "blocked" \| "unavailable" }` | Explicitly request push authorization. MUST be called from a direct user action. The Host owns confirmation and system-permission UI, updates the per-(user, app) subscription state, and returns the resulting Host state. Idempotent when already subscribed. The SDK allows up to 5 minutes for this interactive Host flow; ordinary bridge RPCs retain the 10-second timeout. Respond `NOT_SUPPORTED` when authorization is unavailable. |
+| `notifications.unsubscribe` | — | `{ subscribed: boolean; systemPermission: "granted" \| "denied" \| "blocked" \| "unavailable" }` | Opt the current user out and return the resulting Host state. Idempotent. |
+| `notifications.isSubscribed` | — | `{ subscribed: boolean; systemPermission: "granted" \| "denied" \| "blocked" \| "unavailable" }` | Read the current subscription and system-permission state without side effects or authorization UI. |
+| `notifications.syncSchedules` | `{ replace: true; title: string; schedules: NotificationSchedule[] }` | `{ synced: boolean; scheduledCount: number; permissionGranted: boolean }` | Replace-style sync of the app's local reminder schedules — the host cancels every schedule not present in `schedules` (an empty array clears all). Two schedule shapes: `{ id, type: "time", time: "HH:mm", body?, weekdays?, enabled? }` (ISO weekdays, `1` = Monday … `7` = Sunday; omit for every day) and `{ id, type: "interval", intervalMinutes, body?, activeWindow?: { from, until }, enabled? }` (at most one interval schedule per app in v1). Times are the user's local wall-clock; the host owns timezone resolution and delivery — Eazo Mobile persists the set platform-side so reminders survive the WebView being backgrounded or killed and fire on schedule. This method never requests subscription or system permission. `synced: false` with `permissionGranted: false` means the user has not granted OS notification permission — not a fatal error. Respond `NOT_SUPPORTED` when the host cannot schedule reminders; the SDK then resolves `{ synced: false }` without throwing. |
 
 ### Events
 

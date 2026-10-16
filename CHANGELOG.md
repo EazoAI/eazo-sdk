@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`notifications.syncSchedules()` for platform-hosted reminders.** Embedded
+  apps can replace their full time/interval schedule set through the Eazo
+  Mobile host. The public types and v1 bridge protocol include stable schedule
+  IDs, ISO weekdays, local active windows, and explicit clear-all semantics.
+
 ## [0.22.10] - 2026-09-08
 
 ### Documentation

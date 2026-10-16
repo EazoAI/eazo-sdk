@@ -131,20 +131,65 @@ await share.compose({
 
 ### `notifications`
 
-Per-app push-notification subscription, mediated by the host. Calls flow through the postMessage bridge to the mobile shell which writes the per-(user, app) bit; the embedded app never talks to the platform directly here.
+Per-app push-notification authorization, mediated by the host. Calls flow
+through the postMessage bridge to the mobile shell, which derives the current
+user and app from its trusted WebView context. The embedded app never supplies
+those identities or talks to the platform directly here.
 
 ```ts
 import { notifications } from "@eazo/sdk";
 
-const { subscribed } = await notifications.isSubscribed();
-if (!subscribed) await notifications.subscribe();   // opt the user in
-// later…
-await notifications.unsubscribe();                  // opt the user out
+const state = await notifications.isSubscribed(); // read-only
+
+async function onEnableNotificationsClick() {
+  const result = await notifications.requestSubscription();
+  // result.systemPermission: "granted" | "denied" | "blocked" | "unavailable"
+}
+
+await notifications.unsubscribe(); // opt the user out
+
+await notifications.syncSchedules({
+  title: "Hydration",
+  schedules: [
+    {
+      id: "water-2200",
+      type: "time",
+      time: "22:00",
+      weekdays: [1, 2, 3, 4, 5],
+      body: "Drink a glass of water.",
+    },
+    {
+      id: "daytime-interval",
+      type: "interval",
+      intervalMinutes: 30,
+      activeWindow: { from: "08:00", until: "18:00" },
+    },
+  ],
+});
 ```
 
-In a plain browser (no host) every method resolves `{ subscribed: false }` — no throws — so apps can render the right UI during local web development without special-casing.
+Call `requestSubscription()` only from a direct user action. The Host owns any
+in-app confirmation and system-permission UI, then returns the resulting
+`subscribed` and `systemPermission` state. The legacy `subscribe()` method is a
+deprecated alias that uses this same authorization request. This interactive
+RPC can remain pending for up to 5 minutes while the user handles Host and
+system UI; ordinary bridge RPCs retain the 10-second timeout.
 
-**Publishing** is a separate, server-side surface — see [`@eazo/sdk/server` notifications](#server-notifications-publish).
+`syncSchedules` is replace-style: omitted IDs are removed and an empty
+`schedules` array clears the app's reminders. Times use the user's local wall
+clock and weekdays use ISO values (`1` = Monday through `7` = Sunday). Eazo
+Mobile sends the set to the platform, which owns recurrence and delivery even
+after the WebView is backgrounded or killed. Schedule sync never requests
+subscription or system permission; authorization remains an explicit,
+user-initiated operation.
+
+In a plain browser (no host), subscription methods resolve
+`{ subscribed: false, systemPermission: "unavailable" }` and `syncSchedules` resolves
+`{ synced: false, scheduledCount: 0, permissionGranted: false }`, so apps can
+render the right UI during local development without special-casing.
+
+**Publishing** is a separate, subscriber-only server surface. See
+[`@eazo/sdk/server` notifications](#server-notifications-publish).
 
 ### React integration
 
@@ -176,22 +221,45 @@ Requires `EAZO_PRIVATE_KEY` in the server environment.
 <a id="server-notifications-publish"></a>
 #### `notifications.publish`
 
-Send a system push to every user subscribed to your app. Authenticates by signing an ES256K JWT with `EAZO_PRIVATE_KEY` — there is no user JWT in scope, so this is the right path for cron-driven digests, event-driven alerts, or any backend-originated notification.
+Send a system push to your app's authorized subscribers. Authenticates by
+signing an ES256K JWT with `EAZO_PRIVATE_KEY` — there is no user JWT in scope,
+so this is the right path for cron-driven digests, event-driven alerts, or any
+backend-originated notification.
 
 ```ts
 import { notifications } from "@eazo/sdk/server";
 
 export async function POST() {
+  // Omitting audience broadcasts to every authorized subscriber.
   const { delivered, publishId } = await notifications.publish({
     title: "Slow-cooker timer",
     body: "Your stew is ready.",
-    data: { recipeId: "stew-42" },           // optional, surfaces in the device tap handler
+    data: { recipeId: "stew-42" },
+    dedupeKey: "recipe-ready:stew-42",
   });
   return Response.json({ delivered, publishId });
 }
 ```
 
-`audience` defaults to `"subscribers"` (v1's only value).
+Set `audience: "subscribers"` explicitly or omit it to broadcast. To target a
+subset, pass 1–500 user IDs:
+
+```ts
+await notifications.publish({
+  title: "New assignment",
+  body: "A task was assigned to you.",
+  audience: { userIds: ["user_123", "user_456"] },
+  dedupeKey: "task-assigned:task_42",
+});
+```
+
+Targeted IDs are intersected with the app's authorized subscriber set. Listing
+a user never overrides their notification authorization; unauthorized IDs are
+silently excluded from `delivered`.
+
+`dedupeKey` is optional and accepts up to 120 letters, digits, `:`, `_`, `-`,
+or `.` characters. Reusing the same key suppresses repeat inserts for
+recipients already notified under that logical send.
 
 Throws `EazoNotificationPublishError` on platform-level errors (`code` 401 = bad JWT, 403 = appId doesn't belong to your key, 413 = >5,000 subscribers, etc.).
 
