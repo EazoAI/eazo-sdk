@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Visit analytics on deployment domains.** On a top-level browser page,
+  `<EazoProvider>` loads the hosted `https://cdn.eazo.ai/branding/eazo-app-analytics.js`
+  once with the app id (and `apiBase` when set). It reports opens / sessions
+  to the Eazo platform and `$pageview` / `$pageleave` to PostHog, with the
+  brand banner's anonymous attribution. Not loaded in the Eazo Mobile
+  WebView, iframe embeds, or `localhost` / `*.localhost` / `*.local`; opt
+  out with `window.EAZO_APP_ANALYTICS = false`.
+
 - **One-time payments with several items.** A one-time checkout can cover
   several line items, each in any quantity. `createEazoCheckoutRoute` accepts
   `resolveItems` (body `{ lines, data }`) alongside `getProduct`;
