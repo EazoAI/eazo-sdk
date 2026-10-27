@@ -7,6 +7,7 @@
 
 import * as React from "react";
 
+import { loadAppAnalytics } from "./app-analytics";
 import { getBridge } from "./bootstrap";
 import { _bootstrapAuth } from "./capabilities/auth";
 import { _bootstrapDevice } from "./capabilities/device";
@@ -47,6 +48,10 @@ export function _EazoRuntimeProvider(props: {
     void _bootstrapDevice();
     setHost(getHost());
   }, []);
+  // Top-level web visits only (the loader checks the host itself).
+  React.useEffect(() => {
+    loadAppAnalytics({ appId: props.appId, apiBase: props.apiBase });
+  }, [props.appId, props.apiBase]);
   const showWebUI = host === null || host === "web";
 
   return (

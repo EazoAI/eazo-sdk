@@ -13,6 +13,7 @@ Eazo 平台应用的官方 SDK。
 - `share` — 把文字、图片附件和可选 App 内目标路径交给 Eazo Mobile 的发帖编辑器
 - `payments` — Eazo marketplace 收款能力；生成 App 通过 `@eazo/sdk/payments` 发起 checkout，永远不接收 Stripe secret
 - `useEazo(selector)` — 基于 `useSyncExternalStore` 的 React 集成
+- 访问统计 — `<EazoProvider>` 在顶层浏览器页面加载托管脚本 `eazo-app-analytics.js`（打开 / 会话进 Creator Center，PostHog `$pageview`）；Mobile WebView、iframe 和本地开发环境不加载
 - `requireAuth` — 服务端 Next.js API route 的解密与鉴权守卫
 - 内置 ECC secp256k1 + AES-256-GCM 混合加密用于 session token
 

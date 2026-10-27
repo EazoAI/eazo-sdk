@@ -19,6 +19,7 @@ Capabilities (`import { … } from "@eazo/sdk"`):
 - `notifications` — per-app push subscription toggle (frontend); `notifications.publish` from `@eazo/sdk/server` for server-to-server pushes
 - `payments` — Eazo marketplace payment checkout helpers; server routes call Eazo with `EAZO_PRIVATE_KEY`, generated apps never receive Stripe secrets
 - `useEazo(selector)` — React integration via `useSyncExternalStore`
+- Visit analytics — `<EazoProvider>` loads the hosted `eazo-app-analytics.js` on top-level browser pages (opens / sessions for Creator Center, PostHog `$pageview`); skipped in Mobile WebView, iframes and local dev
 - `requireAuth` — server-side session decrypt + guard for Next.js / Remix route handlers
 
 Built-in crypto: ECC secp256k1 + AES-256-GCM (session tokens), ES256K JWT (server-to-server publish auth).

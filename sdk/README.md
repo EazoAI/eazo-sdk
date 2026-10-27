@@ -159,6 +159,26 @@ const user = useEazo((s) => s.auth.user);
 const { platform, locale } = useEazo((s) => s.device);
 ```
 
+### Visit analytics
+
+On a top-level browser page, `<EazoProvider>` loads the hosted
+[`eazo-app-analytics.js`](https://cdn.eazo.ai/branding/eazo-app-analytics.js)
+once with the app id. It reports deployment-domain opens and sessions to the
+Eazo platform (shown in Creator Center) and sends `$pageview` / `$pageleave`
+to Eazo's PostHog project, with the same anonymous attribution as the
+brand banner. It does not autocapture clicks or inputs, and does not record
+sessions.
+
+It does not load inside the Eazo Mobile WebView or an iframe embed (those
+hosts report their own sessions), or on `localhost`, `*.localhost` and
+`*.local` development hosts. Set `window.EAZO_APP_ANALYTICS = false` before
+the provider mounts to opt out. The script is updated on the CDN, so changes
+to reporting do not need a new SDK release.
+
+Apps with a strict Content-Security-Policy need `script-src
+https://cdn.eazo.ai https://us-assets.i.posthog.com` and `connect-src
+https://eazo.ai https://us.i.posthog.com`.
+
 ### Server (Next.js route handler)
 
 ```ts
